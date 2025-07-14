@@ -12,10 +12,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get video statistics
+    // Get video notification statistics
     const { data: stats, error: statsError } = await supabase
-      .from('processed_videos')
-      .select('status, created_at, sent_to_user')
+      .from('user_video_notifications')
+      .select('is_sent, created_at, sent_at')
       .eq('user_id', user.id)
 
     if (statsError) {
@@ -23,11 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     const totalVideos = stats?.length || 0
-    const pendingVideos = stats?.filter(v => v.status === 'pending').length || 0
-    const processingVideos = stats?.filter(v => v.status === 'processing').length || 0
-    const completedVideos = stats?.filter(v => v.status === 'completed').length || 0
-    const failedVideos = stats?.filter(v => v.status === 'failed').length || 0
-    const sentToUser = stats?.filter(v => v.sent_to_user).length || 0
+    const pendingNotifications = stats?.filter(v => !v.is_sent).length || 0
+    const sentNotifications = stats?.filter(v => v.is_sent).length || 0
 
     // Get videos processed this week
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
@@ -37,10 +34,18 @@ export async function GET(request: NextRequest) {
     const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
     const thisMonthVideos = stats?.filter(v => v.created_at >= monthAgo).length || 0
 
-    // Get channel statistics
+    // Get channel statistics from user subscriptions
     const { data: channelStats, error: channelStatsError } = await supabase
-      .from('processed_videos')
-      .select('channel_id, channel_name')
+      .from('user_video_notifications')
+      .select(`
+        global_processed_videos!inner(
+          global_channel_id,
+          global_youtube_channels!inner(
+            id,
+            channel_name
+          )
+        )
+      `)
       .eq('user_id', user.id)
 
     if (channelStatsError) {
@@ -48,15 +53,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Count videos per channel
-    const channelCounts = channelStats?.reduce((acc: any, video: any) => {
-      if (!acc[video.channel_id]) {
-        acc[video.channel_id] = {
-          channel_id: video.channel_id,
-          channel_name: video.channel_name,
+    const channelCounts = channelStats?.reduce((acc: any, notification: any) => {
+      const channel = notification.global_processed_videos.global_youtube_channels
+      if (!acc[channel.id]) {
+        acc[channel.id] = {
+          channel_id: channel.id,
+          channel_name: channel.channel_name,
           count: 0
         }
       }
-      acc[video.channel_id].count++
+      acc[channel.id].count++
       return acc
     }, {})
 
@@ -80,11 +86,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       overview: {
         totalVideos,
-        pendingVideos,
-        processingVideos,
-        completedVideos,
-        failedVideos,
-        sentToUser,
+        pendingNotifications,
+        sentNotifications,
         thisWeekVideos,
         thisMonthVideos
       },

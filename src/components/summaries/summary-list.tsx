@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ProcessedVideoWithChannel } from '@/lib/types'
+import { UserVideoNotification, GlobalProcessedVideo, GlobalYoutubeChannel } from '@/lib/types'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -17,31 +17,40 @@ import {
 import { Youtube, Clock, ExternalLink, Eye, Calendar } from 'lucide-react'
 
 interface SummaryListProps {
-  summaries: ProcessedVideoWithChannel[]
+  notifications: (UserVideoNotification & {
+    global_processed_videos: GlobalProcessedVideo & {
+      global_youtube_channels: GlobalYoutubeChannel
+    }
+  })[]
 }
 
-export function SummaryList({ summaries }: SummaryListProps) {
-  const [selectedSummary, setSelectedSummary] = useState<ProcessedVideoWithChannel | null>(null)
+export function SummaryList({ notifications }: SummaryListProps) {
+  const [selectedNotification, setSelectedNotification] = useState<UserVideoNotification & {
+    global_processed_videos: GlobalProcessedVideo & {
+      global_youtube_channels: GlobalYoutubeChannel
+    }
+  } | null>(null)
   const searchParams = useSearchParams()
 
-  // Filter summaries based on search params
-  const filteredSummaries = summaries.filter(summary => {
+  // Filter notifications based on search params
+  const filteredNotifications = notifications.filter(notification => {
+    const video = notification.global_processed_videos
     const search = searchParams.get('search')
     const status = searchParams.get('status')
     const period = searchParams.get('period')
 
     // Search filter
-    if (search && !summary.video_title?.toLowerCase().includes(search.toLowerCase())) {
+    if (search && !video.video_title?.toLowerCase().includes(search.toLowerCase())) {
       return false
     }
 
     // Status filter
-    if (status === 'sent' && !summary.sent_to_user) return false
-    if (status === 'pending' && summary.sent_to_user) return false
+    if (status === 'sent' && !notification.is_sent) return false
+    if (status === 'pending' && notification.is_sent) return false
 
     // Period filter
     if (period && period !== 'all') {
-      const created = new Date(summary.created_at!)
+      const created = new Date(notification.created_at!)
       const now = new Date()
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -80,7 +89,7 @@ export function SummaryList({ summaries }: SummaryListProps) {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`
   }
 
-  if (filteredSummaries.length === 0) {
+  if (filteredNotifications.length === 0) {
     return (
       <Card>
         <CardContent className="text-center py-8">
@@ -93,30 +102,33 @@ export function SummaryList({ summaries }: SummaryListProps) {
 
   return (
     <div className="space-y-4">
-      {filteredSummaries.map((summary) => (
-        <Card key={summary.id} className="overflow-hidden">
+      {filteredNotifications.map((notification) => {
+        const video = notification.global_processed_videos
+        const channel = video.global_youtube_channels
+        return (
+        <Card key={notification.id} className="overflow-hidden">
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="flex-1 space-y-2">
                 <div className="flex items-center space-x-2">
-                  <Badge variant={summary.sent_to_user ? "default" : "secondary"}>
-                    {summary.sent_to_user ? 'Enviado' : 'Pendente'}
+                  <Badge variant={notification.is_sent ? "default" : "secondary"}>
+                    {notification.is_sent ? 'Enviado' : 'Pendente'}
                   </Badge>
                   <span className="text-sm text-gray-500">
-                    {summary.youtube_channels?.channel_name}
+                    {channel.channel_name}
                   </span>
                 </div>
                 <CardTitle className="text-lg line-clamp-2">
-                  {summary.video_title}
+                  {video.video_title}
                 </CardTitle>
                 <div className="flex items-center space-x-4 text-sm text-gray-500">
                   <div className="flex items-center">
                     <Clock className="w-4 h-4 mr-1" />
-                    {summary.video_duration && formatDuration(summary.video_duration)}
+                    {video.video_duration && formatDuration(video.video_duration)}
                   </div>
                   <div className="flex items-center">
                     <Calendar className="w-4 h-4 mr-1" />
-                    {formatDate(summary.created_at!)}
+                    {formatDate(notification.created_at!)}
                   </div>
                 </div>
               </div>
@@ -127,7 +139,7 @@ export function SummaryList({ summaries }: SummaryListProps) {
                     <Button 
                       variant="outline" 
                       size="sm"
-                      onClick={() => setSelectedSummary(summary)}
+                      onClick={() => setSelectedNotification(notification)}
                     >
                       <Eye className="w-4 h-4 mr-1" />
                       Ver Resumo
@@ -136,30 +148,40 @@ export function SummaryList({ summaries }: SummaryListProps) {
                   <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader>
                       <DialogTitle className="text-lg">
-                        {summary.video_title}
+                        {video.video_title}
                       </DialogTitle>
                       <DialogDescription>
-                        Canal: {summary.youtube_channels?.channel_name} • 
-                        Duração: {summary.video_duration && formatDuration(summary.video_duration)} • 
-                        {formatDate(summary.created_at!)}
+                        Canal: {channel.channel_name} • 
+                        Duração: {video.video_duration && formatDuration(video.video_duration)} • 
+                        {formatDate(notification.created_at!)}
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                       {/* Summary Content */}
                       <div className="prose prose-sm max-w-none">
                         <div className="whitespace-pre-wrap bg-gray-50 p-4 rounded-lg">
-                          {summary.summary || 'Resumo não disponível'}
+                          {video.summary || 'Resumo não disponível'}
                         </div>
                       </div>
                       
+                      {/* Transcript if available */}
+                      {video.transcript && (
+                        <div className="prose prose-sm max-w-none">
+                          <h4 className="font-medium mb-2">Transcrição:</h4>
+                          <div className="whitespace-pre-wrap bg-gray-50 p-4 rounded-lg text-sm max-h-60 overflow-y-auto">
+                            {video.transcript}
+                          </div>
+                        </div>
+                      )}
+                      
                       {/* Actions */}
                       <div className="flex justify-between items-center pt-4 border-t">
-                        <Badge variant={summary.sent_to_user ? "default" : "secondary"}>
-                          {summary.sent_to_user ? 'Enviado para WhatsApp' : 'Aguardando envio'}
+                        <Badge variant={notification.is_sent ? "default" : "secondary"}>
+                          {notification.is_sent ? 'Enviado para WhatsApp' : 'Aguardando envio'}
                         </Badge>
                         <Button
                           variant="outline"
-                          onClick={() => window.open(summary.video_url || '', '_blank')}
+                          onClick={() => window.open(video.video_url || '', '_blank')}
                         >
                           <ExternalLink className="w-4 h-4 mr-1" />
                           Ver Vídeo
@@ -172,7 +194,7 @@ export function SummaryList({ summaries }: SummaryListProps) {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => window.open(summary.video_url || '', '_blank')}
+                  onClick={() => window.open(video.video_url || '', '_blank')}
                 >
                   <ExternalLink className="w-4 h-4" />
                 </Button>
@@ -182,17 +204,18 @@ export function SummaryList({ summaries }: SummaryListProps) {
           
           <CardContent>
             <p className="text-gray-600 line-clamp-3">
-              {summary.summary?.substring(0, 200)}...
+              {video.summary?.substring(0, 200)}...
             </p>
           </CardContent>
         </Card>
-      ))}
+        )
+      })}
       
       {/* Pagination could be added here if needed */}
-      {filteredSummaries.length > 20 && (
+      {filteredNotifications.length > 20 && (
         <div className="text-center py-4">
           <p className="text-sm text-gray-500">
-            Mostrando {Math.min(20, filteredSummaries.length)} de {filteredSummaries.length} resumos
+            Mostrando {Math.min(20, filteredNotifications.length)} de {filteredNotifications.length} notificações
           </p>
         </div>
       )}

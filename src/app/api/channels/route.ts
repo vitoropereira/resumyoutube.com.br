@@ -26,20 +26,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get user profile to check limits
-    const { data: profile } = await supabase
-      .from('users')
-      .select('max_channels')
-      .eq('id', user.id)
-      .single()
+    // Check if user can add more channels using global function
+    const { data: canAdd, error: canAddError } = await supabase
+      .rpc('can_add_global_channel', { user_uuid: user.id })
 
-    // Check current channel count
-    const { count: currentCount } = await supabase
-      .from('youtube_channels')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', user.id)
-
-    if (currentCount && currentCount >= (profile?.max_channels || 3)) {
+    if (canAddError || !canAdd) {
       return NextResponse.json(
         { error: 'Limite de canais atingido' },
         { status: 400 }
@@ -55,19 +46,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check if channel already exists
-    const { data: existingChannel } = await supabase
-      .from('youtube_channels')
+    // Check if user is already subscribed to this global channel
+    // First get the global channel ID by YouTube channel ID
+    const { data: globalChannel } = await supabase
+      .from('global_youtube_channels')
       .select('id')
-      .eq('user_id', user.id)
-      .eq('channel_id', channelId)
+      .eq('youtube_channel_id', channelId)
       .single()
 
-    if (existingChannel) {
-      return NextResponse.json(
-        { error: 'Canal já foi adicionado' },
-        { status: 400 }
-      )
+    if (globalChannel) {
+      const { data: existingSubscription } = await supabase
+        .from('user_channel_subscriptions')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('global_channel_id', globalChannel.id)
+        .eq('is_active', true)
+        .single()
+
+      if (existingSubscription) {
+        return NextResponse.json(
+          { error: 'Você já está inscrito neste canal' },
+          { status: 400 }
+        )
+      }
     }
 
     // Fetch channel info from YouTube API
@@ -80,29 +81,74 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Prepare channel data according to youtube_channels table structure
-    const channelData = {
-      user_id: user.id,
-      channel_id: channelInfo.id,
-      channel_name: channelInfo.title,
-      channel_url: url,
-      channel_description: channelInfo.description,
-      subscriber_count: parseInt(channelInfo.statistics.subscriberCount),
-      video_count: parseInt(channelInfo.statistics.videoCount),
-      is_active: true
-    }
-
-    console.log('Attempting to insert channel with data:', channelData)
-    console.log('User ID:', user.id)
-
     // Use admin client to bypass RLS policies
     const adminClient = createAdminClient()
     
-    // Insert channel using admin client
-    const { data: newChannel, error: insertError } = await adminClient
-      .from('youtube_channels')
-      .insert(channelData)
-      .select()
+    // First, check if global channel already exists
+    const { data: existingGlobalChannel } = await adminClient
+      .from('global_youtube_channels')
+      .select('id')
+      .eq('youtube_channel_id', channelInfo.id)
+      .single()
+
+    let globalChannelId: string
+
+    if (existingGlobalChannel) {
+      // Channel already exists globally, just use its ID
+      globalChannelId = existingGlobalChannel.id
+    } else {
+      // Create new global channel
+      const globalChannelData = {
+        youtube_channel_id: channelInfo.id,
+        channel_name: channelInfo.title,
+        channel_url: url,
+        channel_description: channelInfo.description,
+        subscriber_count: parseInt(channelInfo.statistics.subscriberCount),
+        video_count: parseInt(channelInfo.statistics.videoCount),
+        is_active: true
+      }
+
+      const { data: newGlobalChannel, error: globalInsertError } = await adminClient
+        .from('global_youtube_channels')
+        .insert(globalChannelData)
+        .select('id')
+        .single()
+
+      if (globalInsertError) {
+        console.error('Error inserting global channel:', globalInsertError)
+        return NextResponse.json(
+          { error: `Erro ao adicionar canal: ${globalInsertError.message}` },
+          { status: 500 }
+        )
+      }
+
+      globalChannelId = newGlobalChannel.id
+    }
+
+    // Create user subscription to global channel
+    const subscriptionData = {
+      user_id: user.id,
+      global_channel_id: globalChannelId,
+      is_active: true
+    }
+
+    const { data: newSubscription, error: insertError } = await adminClient
+      .from('user_channel_subscriptions')
+      .insert(subscriptionData)
+      .select(`
+        id,
+        subscribed_at,
+        is_active,
+        global_youtube_channels(
+          id,
+          youtube_channel_id,
+          channel_name,
+          channel_url,
+          channel_description,
+          subscriber_count,
+          video_count
+        )
+      `)
       .single()
 
     if (insertError) {
@@ -121,7 +167,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       message: 'Canal adicionado com sucesso',
-      channel: newChannel
+      subscription: newSubscription
     })
 
   } catch (error) {
@@ -148,14 +194,29 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get user's channels using admin client
-    const { data: channels, error: channelsError } = await adminSupabase
-      .from('youtube_channels')
-      .select('*')
+    // Get user's global channel subscriptions using admin client
+    const { data: subscriptions, error: subscriptionsError } = await adminSupabase
+      .from('user_channel_subscriptions')
+      .select(`
+        id,
+        subscribed_at,
+        is_active,
+        global_youtube_channels(
+          id,
+          youtube_channel_id,
+          channel_name,
+          channel_url,
+          channel_description,
+          subscriber_count,
+          video_count,
+          last_check_at
+        )
+      `)
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+      .eq('is_active', true)
+      .order('subscribed_at', { ascending: false })
 
-    if (channelsError) {
+    if (subscriptionsError) {
       return NextResponse.json(
         { error: 'Erro ao buscar canais' },
         { status: 500 }
@@ -163,7 +224,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      channels: channels || []
+      subscriptions: subscriptions || []
     })
   } catch (error) {
     console.error('Error fetching channels:', error)
@@ -199,10 +260,10 @@ export async function DELETE(request: NextRequest) {
       )
     }
 
-    // Delete channel using admin client
+    // Delete user subscription (set as inactive) using admin client
     const { error: deleteError } = await adminSupabase
-      .from('youtube_channels')
-      .delete()
+      .from('user_channel_subscriptions')
+      .update({ is_active: false })
       .eq('id', channelId)
       .eq('user_id', user.id)
 

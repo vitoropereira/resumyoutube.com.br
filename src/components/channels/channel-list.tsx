@@ -188,7 +188,8 @@ export function ChannelList({ channels, canAddMore }: ChannelListProps) {
               )}
             </CardContent>
           </Card>
-        ))}
+        )
+        })}
       </div>
 
       {/* Delete Confirmation Dialog */}

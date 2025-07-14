@@ -31,33 +31,51 @@ async function getUserData() {
     .eq('id', user.id)
     .single()
 
-  // Get channels count
+  // Get active subscriptions count
   const { count: channelsCount } = await supabase
-    .from('youtube_channels')
+    .from('user_channel_subscriptions')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
+    .eq('is_active', true)
 
-  // Get summaries count (assuming summaries table exists)
+  // Get notifications count
   const { count: summariesCount } = await supabase
-    .from('summaries')
+    .from('user_video_notifications')
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
-    .then(result => result)
-    .catch(() => ({ count: 0 }))
 
-  // Get recent summaries (mock for now since summaries table may not exist)
-  const recentSummaries: any[] = []
+  // Get recent notifications
+  const { data: recentNotifications } = await supabase
+    .from('user_video_notifications')
+    .select(`
+      id,
+      is_sent,
+      sent_at,
+      created_at,
+      global_processed_videos!inner(
+        id,
+        video_title,
+        video_url,
+        published_at,
+        global_youtube_channels!inner(
+          channel_name
+        )
+      )
+    `)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(5)
 
   return {
     user: profile,
     channelsCount: channelsCount || 0,
-    summariesCount: summariesCount?.count || 0,
-    recentSummaries: recentSummaries || []
+    summariesCount: summariesCount || 0,
+    recentNotifications: recentNotifications || []
   }
 }
 
 export default async function DashboardPage() {
-  const { user, channelsCount, summariesCount, recentSummaries } = await getUserData()
+  const { user, channelsCount, summariesCount, recentNotifications } = await getUserData()
 
   const stats = [
     {
@@ -147,23 +165,23 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Recent Summaries */}
+        {/* Recent Notifications */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center">
               <Clock className="mr-2 h-5 w-5" />
-              Resumos Recentes
+Notificações Recentes
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {recentSummaries.length === 0 ? (
+            {recentNotifications.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="mx-auto h-12 w-12 text-gray-400" />
                 <h3 className="mt-2 text-sm font-medium text-gray-900">
-                  Nenhum resumo ainda
+Nenhuma notificação ainda
                 </h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  Adicione um canal para começar a receber resumos automáticos
+Adicione um canal para começar a receber notificações automáticas
                 </p>
                 <div className="mt-6">
                   <Link href="/dashboard/channels">
@@ -176,29 +194,30 @@ export default async function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-4">
-                {recentSummaries.map((summary) => (
-                  <div key={summary.id} className="flex items-center justify-between p-4 border rounded-lg">
+                {recentNotifications.map((notification) => {
+                  const video = notification.global_processed_videos
+                  const channel = video.global_youtube_channels
+                  return (
+                  <div key={notification.id} className="flex items-center justify-between p-4 border rounded-lg">
                     <div>
-                      <h4 className="font-medium text-gray-900">{summary.title}</h4>
+                      <h4 className="font-medium text-gray-900">{video.video_title}</h4>
                       <p className="text-sm text-gray-500">
-                        {summary.channels?.name} • {new Date(summary.created_at).toLocaleDateString('pt-BR')}
+                        {channel.channel_name} • {new Date(notification.created_at).toLocaleDateString('pt-BR')}
                       </p>
                     </div>
                     <span className={`px-2 py-1 text-xs rounded-full ${
-                      summary.status === 'completed' 
+                      notification.is_sent 
                         ? 'bg-green-100 text-green-800'
-                        : summary.status === 'processing'
-                        ? 'bg-yellow-100 text-yellow-800' 
-                        : 'bg-red-100 text-red-800'
+                        : 'bg-yellow-100 text-yellow-800'
                     }`}>
-                      {summary.status === 'completed' ? 'Concluído' : 
-                       summary.status === 'processing' ? 'Processando' : 'Erro'}
+                      {notification.is_sent ? 'Enviado' : 'Pendente'}
                     </span>
                   </div>
-                ))}
+                  )
+                })}
                 <div className="text-center">
                   <Link href="/dashboard/summaries">
-                    <Button variant="outline">Ver Todos os Resumos</Button>
+                    <Button variant="outline">Ver Todas as Notificações</Button>
                   </Link>
                 </div>
               </div>

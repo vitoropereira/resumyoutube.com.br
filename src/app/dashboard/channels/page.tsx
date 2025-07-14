@@ -26,25 +26,42 @@ async function getUserData() {
     .eq('id', user.id)
     .single()
 
-  // Get user channels using admin client to bypass RLS issues
-  const { data: channels } = await adminSupabase
-    .from('youtube_channels')
-    .select('*')
+  // Get user channel subscriptions using admin client to bypass RLS issues
+  const { data: subscriptions } = await adminSupabase
+    .from('user_channel_subscriptions')
+    .select(`
+      id,
+      subscribed_at,
+      is_active,
+      global_youtube_channels!inner(
+        id,
+        youtube_channel_id,
+        channel_name,
+        channel_url,
+        channel_description,
+        subscriber_count,
+        video_count,
+        last_check_at,
+        created_at
+      )
+    `)
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
+    .eq('is_active', true)
+    .order('subscribed_at', { ascending: false })
 
-  // Check if user can add more channels
-  const canAdd = (channels?.length || 0) < (profile?.max_channels || 3)
+  // Check if user can add more channels using global function
+  const { data: canAdd } = await adminSupabase
+    .rpc('can_add_global_channel', { user_uuid: user.id })
 
   return {
     user: profile,
-    channels: channels || [],
-    canAddChannel: canAdd
+    subscriptions: subscriptions || [],
+    canAddChannel: canAdd || false
   }
 }
 
 export default async function ChannelsPage() {
-  const { user, channels, canAddChannel } = await getUserData()
+  const { user, subscriptions, canAddChannel } = await getUserData()
 
   return (
     <DashboardLayout title="Meus Canais" user={user}>
@@ -61,7 +78,7 @@ export default async function ChannelsPage() {
           <AddChannelDialog 
             disabled={!canAddChannel}
             maxChannels={user?.max_channels || 3}
-            currentCount={channels.length}
+            currentCount={subscriptions.length}
           >
             <Button disabled={!canAddChannel}>
               <Plus className="mr-2 h-4 w-4" />
@@ -81,7 +98,7 @@ export default async function ChannelsPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {channels.filter(c => c.is_active).length}
+                {subscriptions.filter(s => s.is_active).length}
               </div>
               <p className="text-xs text-muted-foreground">
                 de {user?.max_channels || 3} permitidos
@@ -97,9 +114,9 @@ export default async function ChannelsPage() {
               <Youtube className="h-4 w-4 text-blue-500" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{channels.length}</div>
+              <div className="text-2xl font-bold">{subscriptions.length}</div>
               <p className="text-xs text-muted-foreground">
-                canais adicionados
+                inscrições ativas
               </p>
             </CardContent>
           </Card>
@@ -116,22 +133,22 @@ export default async function ChannelsPage() {
               </div>
               <p className="text-xs text-muted-foreground">
                 {canAddChannel 
-                  ? `${(user?.max_channels || 3) - channels.length} slots restantes`
-                  : 'Remova um canal para adicionar outro'
+                  ? `${(user?.max_channels || 3) - subscriptions.length} slots restantes`
+                  : 'Cancele uma inscrição para adicionar outro canal'
                 }
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Channels List */}
-        {channels.length === 0 ? (
+        {/* Subscriptions List */}
+        {subscriptions.length === 0 ? (
           <Card>
             <CardHeader className="text-center">
               <Youtube className="mx-auto h-12 w-12 text-gray-400" />
-              <CardTitle>Nenhum canal adicionado</CardTitle>
+              <CardTitle>Nenhuma inscrição ativa</CardTitle>
               <CardDescription>
-                Comece adicionando canais do YouTube para monitorar
+                Inscreva-se em canais do YouTube para monitorar
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
@@ -141,15 +158,17 @@ export default async function ChannelsPage() {
               >
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
-                  Adicionar Primeiro Canal
+Fazer Primeira Inscrição
                 </Button>
               </AddChannelDialog>
             </CardContent>
           </Card>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {channels.map((channel) => (
-              <Card key={channel.id} className="hover:shadow-md transition-shadow">
+            {subscriptions.map((subscription) => {
+              const channel = subscription.global_youtube_channels
+              return (
+              <Card key={subscription.id} className="hover:shadow-md transition-shadow">
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center space-x-3">
@@ -164,11 +183,11 @@ export default async function ChannelsPage() {
                       </div>
                     </div>
                     <span className={`px-2 py-1 text-xs rounded-full ${
-                      channel.is_active 
+                      subscription.is_active 
                         ? 'bg-green-100 text-green-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {channel.is_active ? 'Ativo' : 'Inativo'}
+                      {subscription.is_active ? 'Ativo' : 'Inativo'}
                     </span>
                   </div>
                 </CardHeader>
@@ -183,7 +202,7 @@ export default async function ChannelsPage() {
                     
                     <div className="flex items-center justify-between text-sm text-gray-500">
                       <span>
-                        Adicionado {new Date(channel.created_at).toLocaleDateString('pt-BR')}
+                        Inscrito em {new Date(subscription.subscribed_at).toLocaleDateString('pt-BR')}
                       </span>
                       {channel.last_check_at && (
                         <span>
@@ -203,16 +222,17 @@ export default async function ChannelsPage() {
                         </a>
                       </Button>
                       
-                      <DeleteChannelDialog channelId={channel.id} channelName={channel.channel_name}>
+                      <DeleteChannelDialog channelId={subscription.id} channelName={channel.channel_name}>
                         <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
-                          Remover
+                          Cancelar Inscrição
                         </Button>
                       </DeleteChannelDialog>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-            ))}
+              )
+            })}
           </div>
         )}
         

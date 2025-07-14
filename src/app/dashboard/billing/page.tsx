@@ -31,17 +31,17 @@ async function getUserData() {
     .eq('user_id', user.id)
     .single()
 
-  // Get usage stats
-  const { data: summaries } = await supabase
-    .from('processed_videos')
+  // Get usage stats from user notifications
+  const { data: notifications } = await supabase
+    .from('user_video_notifications')
     .select('id, created_at')
-    .eq('youtube_channels.user_id', user.id)
+    .eq('user_id', user.id)
 
   // Calculate current month usage
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-  const currentMonthUsage = summaries?.filter(s => 
-    new Date(s.created_at!) >= startOfMonth
+  const currentMonthUsage = notifications?.filter(n => 
+    new Date(n.created_at!) >= startOfMonth
   ).length || 0
 
   return {
@@ -77,7 +77,7 @@ export default async function BillingPage() {
     {
       title: 'Uso Este Mês',
       value: currentMonthUsage,
-      description: 'de 30 resumos permitidos',
+description: 'de 30 notificações permitidas',
       icon: CreditCard,
       color: currentMonthUsage > 25 ? 'text-yellow-500' : 'text-green-500',
     },
@@ -141,11 +141,11 @@ export default async function BillingPage() {
                 </div>
                 <div className="flex items-center">
                   <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                  <span>Até 30 resumos por mês</span>
+                  <span>Até 30 notificações por mês</span>
                 </div>
                 <div className="flex items-center">
                   <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                  <span>Resumos automáticos via WhatsApp</span>
+                  <span>Notificações automáticas via WhatsApp</span>
                 </div>
                 <div className="flex items-center">
                   <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
@@ -153,7 +153,7 @@ export default async function BillingPage() {
                 </div>
                 <div className="flex items-center">
                   <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                  <span>Histórico de todos os resumos</span>
+                  <span>Histórico de todas as notificações</span>
                 </div>
                 <div className="flex items-center">
                   <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
@@ -180,10 +180,10 @@ export default async function BillingPage() {
             </CardHeader>
             <CardContent>
               <p className="text-yellow-700">
-                Você já utilizou {currentMonthUsage} de 30 resumos este mês. 
+                Você já utilizou {currentMonthUsage} de 30 notificações este mês. 
                 {currentMonthUsage >= 30 
                   ? ' Você atingiu o limite mensal.'
-                  : ` Restam ${30 - currentMonthUsage} resumos.`
+                  : ` Restam ${30 - currentMonthUsage} notificações.`
                 }
               </p>
             </CardContent>

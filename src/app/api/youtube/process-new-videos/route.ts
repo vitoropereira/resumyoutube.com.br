@@ -15,67 +15,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's active channels
-    const { data: channels, error: channelsError } = await supabase
-      .from('youtube_channels')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
+    // Get global channels to check using the global function
+    const { data: channelsToCheck, error: channelsError } = await adminSupabase
+      .rpc('get_global_channels_to_check', { check_limit: 50 })
 
     if (channelsError) {
       return NextResponse.json({ error: 'Failed to fetch channels' }, { status: 500 })
     }
 
-    if (!channels || channels.length === 0) {
-      return NextResponse.json({ message: 'No active channels found' })
+    if (!channelsToCheck || channelsToCheck.length === 0) {
+      return NextResponse.json({ message: 'No channels to check' })
     }
 
     let totalNewVideos = 0
     const processedChannels = []
 
-    for (const channel of channels) {
+    for (const channel of channelsToCheck) {
       try {
         // Get videos published after last check
         const publishedAfter = channel.last_check_at 
           ? new Date(channel.last_check_at).toISOString()
           : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() // Last 24 hours
 
-        const videos = await getLatestVideosFromChannels([channel.channel_id], publishedAfter)
+        const videos = await getLatestVideosFromChannels([channel.youtube_channel_id], publishedAfter)
         
         if (videos.length > 0) {
-          // Save new videos to database
+          // Process each new video using the global function
           for (const video of videos) {
-            // Check if video already exists
+            // Check if video already exists globally
             const { data: existingVideo } = await adminSupabase
-              .from('processed_videos')
+              .from('global_processed_videos')
               .select('id')
               .eq('video_id', video.id)
-              .eq('user_id', user.id)
               .single()
 
             if (!existingVideo) {
-              // Insert new video
-              const { error: insertError } = await adminSupabase
-                .from('processed_videos')
-                .insert({
-                  user_id: user.id,
+              // Process new video globally (creates video + notifications for all users)
+              const { data: videoUuid, error: processError } = await adminSupabase
+                .rpc('process_global_video', {
+                  channel_uuid: channel.channel_uuid,
                   video_id: video.id,
-                  title: video.title,
-                  description: video.description,
-                  channel_id: video.channelId,
-                  channel_name: video.channelTitle,
-                  published_at: video.publishedAt,
-                  duration: video.duration,
-                  thumbnail_url: video.thumbnails.medium?.url || video.thumbnails.default?.url,
-                  view_count: parseInt(video.viewCount),
-                  like_count: parseInt(video.likeCount),
-                  comment_count: parseInt(video.commentCount),
-                  status: 'pending', // Will be processed later for summary generation
-                  created_at: new Date().toISOString()
+                  video_title: video.title,
+                  video_url: `https://youtube.com/watch?v=${video.id}`,
+                  video_description: video.description,
+                  transcript_text: null, // Will be populated later
+                  summary_text: null, // Will be populated later
+                  video_duration: video.duration,
+                  published_at: video.publishedAt
                 })
 
-              if (insertError) {
-                console.error('Error inserting video:', insertError)
+              if (processError) {
+                console.error('Error processing global video:', processError)
               } else {
                 totalNewVideos++
               }
@@ -83,25 +73,17 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Update channel's last_check_at timestamp
-        await adminSupabase
-          .from('youtube_channels')
-          .update({ 
-            last_check_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', channel.id)
-
         processedChannels.push({
-          channel_id: channel.channel_id,
+          channel_id: channel.youtube_channel_id,
           channel_name: channel.channel_name,
-          new_videos: videos.length
+          new_videos: videos.length,
+          total_users: channel.total_users
         })
 
       } catch (error) {
         console.error(`Error processing channel ${channel.channel_name}:`, error)
         processedChannels.push({
-          channel_id: channel.channel_id,
+          channel_id: channel.youtube_channel_id,
           channel_name: channel.channel_name,
           error: error instanceof Error ? error.message : 'Unknown error'
         })
@@ -109,7 +91,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: `Processed ${channels.length} channels`,
+      message: `Processed ${channelsToCheck.length} channels`,
       total_new_videos: totalNewVideos,
       processed_channels: processedChannels
     })
@@ -127,6 +109,7 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const adminSupabase = createAdminClient()
     
     // Get current user
     const { data: { user }, error: userError } = await supabase.auth.getUser()
@@ -135,34 +118,44 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user's active channels
-    const { data: channels, error: channelsError } = await supabase
-      .from('youtube_channels')
-      .select('*')
+    // Get user's active channel subscriptions
+    const { data: subscriptions, error: subscriptionsError } = await supabase
+      .from('user_channel_subscriptions')
+      .select(`
+        id,
+        is_active,
+        global_youtube_channels!inner(
+          id,
+          youtube_channel_id,
+          channel_name,
+          last_check_at
+        )
+      `)
       .eq('user_id', user.id)
       .eq('is_active', true)
 
-    if (channelsError) {
-      return NextResponse.json({ error: 'Failed to fetch channels' }, { status: 500 })
+    if (subscriptionsError) {
+      return NextResponse.json({ error: 'Failed to fetch subscriptions' }, { status: 500 })
     }
 
-    if (!channels || channels.length === 0) {
+    if (!subscriptions || subscriptions.length === 0) {
       return NextResponse.json({ available_videos: 0, channels: [] })
     }
 
     const channelStatus = []
     let totalAvailableVideos = 0
 
-    for (const channel of channels) {
+    for (const subscription of subscriptions) {
       try {
+        const channel = subscription.global_youtube_channels
         const publishedAfter = channel.last_check_at 
           ? new Date(channel.last_check_at).toISOString()
           : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
-        const videos = await getLatestVideosFromChannels([channel.channel_id], publishedAfter)
+        const videos = await getLatestVideosFromChannels([channel.youtube_channel_id], publishedAfter)
         
         channelStatus.push({
-          channel_id: channel.channel_id,
+          channel_id: channel.youtube_channel_id,
           channel_name: channel.channel_name,
           last_check_at: channel.last_check_at,
           available_videos: videos.length
@@ -171,8 +164,8 @@ export async function GET(request: NextRequest) {
         totalAvailableVideos += videos.length
       } catch (error) {
         channelStatus.push({
-          channel_id: channel.channel_id,
-          channel_name: channel.channel_name,
+          channel_id: subscription.global_youtube_channels.youtube_channel_id,
+          channel_name: subscription.global_youtube_channels.channel_name,
           error: error instanceof Error ? error.message : 'Unknown error'
         })
       }

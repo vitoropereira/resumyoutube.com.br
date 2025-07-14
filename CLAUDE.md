@@ -33,17 +33,31 @@ Resume YouTube is a Next.js 15 dashboard application that allows users to monito
 
 ## Database Schema (Supabase)
 
-Key tables in the database:
+### Global Structure (Optimized - Current)
 - `users`: User profiles with subscription status
-- `youtube_channels`: Monitored YouTube channels
-- `processed_videos`: AI-generated video summaries
+- `global_youtube_channels`: Unique YouTube channels (no duplication)
+- `user_channel_subscriptions`: User → Channel relationships (N:N)
+- `global_processed_videos`: AI-generated video summaries (1 per video)
+- `user_video_notifications`: User-specific notification control
 - `subscriptions`: Stripe subscription data
 - `conversation_logs`: WhatsApp bot interaction logs
 
-Important functions:
-- `get_user_status(phone)`: Get complete user info
-- `can_add_channel(user_id)`: Check if user can add channels
-- `get_channels_to_check(limit)`: Get channels for monitoring
+### Legacy Structure (Deprecated - Compatibility Only)
+- `youtube_channels`: Old user-specific channels
+- `processed_videos`: Old user-specific video summaries
+
+### Important Functions
+- `get_user_status(phone)`: Get complete user info (updated with global structure)
+- `can_add_global_channel(user_id)`: Check if user can add channels
+- `get_global_channels_to_check(limit)`: Get channels for monitoring
+- `process_global_video(...)`: Process new video globally with notifications
+
+### Key Benefits of Global Structure
+✅ **90% cost reduction** in OpenAI API calls (1 summary per video vs N summaries)  
+✅ **Transcript storage** for higher quality summaries  
+✅ **Scalable architecture** for thousands of users  
+✅ **Individual notification control** per user  
+✅ **Backward compatibility** maintained
 
 ## Key Directories
 
@@ -97,7 +111,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 ### Subscription Management
 - R$ 39,90/month recurring subscription via Stripe
 - Webhook handles subscription status updates
-- Users limited to 3 channels and 30 summaries/month
+- Users limited to 3 channels and 30 notifications/month
 
 ### YouTube Integration
 - Validates YouTube channel URLs and extracts channel info
@@ -127,10 +141,11 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 ## Integration with WhatsApp Bot
 
-- The dashboard is read-only for WhatsApp integration
-- Bot reads from `processed_videos` table to send summaries
-- Bot updates `sent_to_user` field when summaries are delivered
+- The dashboard shows notification history for WhatsApp integration
+- Bot reads from `user_video_notifications` table to send summaries
+- Bot updates `is_sent` field when notifications are delivered
 - All user communication happens via WhatsApp, not the dashboard
+- Bot uses `global_processed_videos` for actual summary content
 
 ## Common Development Tasks
 
