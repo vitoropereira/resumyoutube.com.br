@@ -33,7 +33,7 @@ Resume YouTube is a Next.js 15 dashboard application that allows users to monito
 
 ## Database Schema (Supabase)
 
-### Global Structure (Optimized - Current)
+### Database Structure
 - `users`: User profiles with subscription status
 - `global_youtube_channels`: Unique YouTube channels (no duplication)
 - `user_channel_subscriptions`: User → Channel relationships (N:N)
@@ -42,9 +42,6 @@ Resume YouTube is a Next.js 15 dashboard application that allows users to monito
 - `subscriptions`: Stripe subscription data
 - `conversation_logs`: WhatsApp bot interaction logs
 
-### Legacy Structure (Deprecated - Compatibility Only)
-- `youtube_channels`: Old user-specific channels
-- `processed_videos`: Old user-specific video summaries
 
 ### Important Functions
 - `get_user_status(phone)`: Get complete user info (updated with global structure)
@@ -52,12 +49,12 @@ Resume YouTube is a Next.js 15 dashboard application that allows users to monito
 - `get_global_channels_to_check(limit)`: Get channels for monitoring
 - `process_global_video(...)`: Process new video globally with notifications
 
-### Key Benefits of Global Structure
+### Key Benefits
 ✅ **90% cost reduction** in OpenAI API calls (1 summary per video vs N summaries)  
 ✅ **Transcript storage** for higher quality summaries  
 ✅ **Scalable architecture** for thousands of users  
 ✅ **Individual notification control** per user  
-✅ **Backward compatibility** maintained
+✅ **Clean codebase** without legacy dependencies
 
 ## Key Directories
 

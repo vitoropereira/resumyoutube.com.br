@@ -142,53 +142,6 @@ export type Database = {
         }
         Relationships: []
       }
-      processed_videos: {
-        Row: {
-          channel_id: string | null
-          created_at: string | null
-          id: string
-          published_at: string | null
-          sent_to_user: boolean | null
-          summary: string | null
-          video_duration: string | null
-          video_id: string | null
-          video_title: string | null
-          video_url: string | null
-        }
-        Insert: {
-          channel_id?: string | null
-          created_at?: string | null
-          id?: string
-          published_at?: string | null
-          sent_to_user?: boolean | null
-          summary?: string | null
-          video_duration?: string | null
-          video_id?: string | null
-          video_title?: string | null
-          video_url?: string | null
-        }
-        Update: {
-          channel_id?: string | null
-          created_at?: string | null
-          id?: string
-          published_at?: string | null
-          sent_to_user?: boolean | null
-          summary?: string | null
-          video_duration?: string | null
-          video_id?: string | null
-          video_title?: string | null
-          video_url?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "processed_videos_channel_id_fkey"
-            columns: ["channel_id"]
-            isOneToOne: false
-            referencedRelation: "youtube_channels"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       subscriptions: {
         Row: {
           amount_cents: number | null
@@ -344,82 +297,16 @@ export type Database = {
           },
         ]
       }
-      youtube_channels: {
-        Row: {
-          channel_id: string | null
-          channel_name: string | null
-          channel_url: string | null
-          created_at: string | null
-          id: string
-          is_active: boolean | null
-          last_video_id: string | null
-          subscriber_count: number | null
-          user_id: string | null
-        }
-        Insert: {
-          channel_id?: string | null
-          channel_name?: string | null
-          channel_url?: string | null
-          created_at?: string | null
-          id?: string
-          is_active?: boolean | null
-          last_video_id?: string | null
-          subscriber_count?: number | null
-          user_id?: string | null
-        }
-        Update: {
-          channel_id?: string | null
-          channel_name?: string | null
-          channel_url?: string | null
-          created_at?: string | null
-          id?: string
-          is_active?: boolean | null
-          last_video_id?: string | null
-          subscriber_count?: number | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "youtube_channels_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      can_add_channel: {
-        Args: {
-          user_uuid: string
-        }
-        Returns: boolean
-      }
       can_add_global_channel: {
         Args: {
           user_uuid: string
         }
         Returns: boolean
-      }
-      get_channels_to_check: {
-        Args: {
-          limit_count: number
-        }
-        Returns: {
-          channel_id: string | null
-          channel_name: string | null
-          channel_url: string | null
-          created_at: string | null
-          id: string
-          is_active: boolean | null
-          last_video_id: string | null
-          subscriber_count: number | null
-          user_id: string | null
-        }[]
       }
       get_global_channels_to_check: {
         Args: {

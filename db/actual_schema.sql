@@ -172,48 +172,6 @@ CREATE TABLE user_video_notifications (
 COMMENT ON TABLE user_video_notifications IS 'Controle individual de envio por usuário';
 COMMENT ON COLUMN user_video_notifications.is_sent IS 'Se a notificação foi enviada via WhatsApp';
 
--- =====================================================
--- 6. ESTRUTURA LEGACY (MANTER COMPATIBILIDADE)
--- =====================================================
-
--- 6.1 CANAIS LEGACY (COMPATIBILIDADE)
-CREATE TABLE youtube_channels (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    channel_id VARCHAR(255) NOT NULL, -- ID do YouTube (pode duplicar)
-    channel_name VARCHAR(500) NOT NULL,
-    channel_url VARCHAR(500) NOT NULL,
-    channel_description TEXT,
-    subscriber_count INTEGER,
-    video_count INTEGER,
-    last_video_id VARCHAR(255),
-    last_check_at TIMESTAMPTZ DEFAULT now(),
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-COMMENT ON TABLE youtube_channels IS 'Canais legacy - manter para compatibilidade';
-
--- 6.2 VÍDEOS PROCESSADOS LEGACY
-CREATE TABLE processed_videos (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    channel_id UUID REFERENCES youtube_channels(id) ON DELETE CASCADE,
-    video_id VARCHAR(255) NOT NULL,
-    video_title VARCHAR(500) NOT NULL,
-    video_url VARCHAR(500) NOT NULL,
-    video_description TEXT,
-    transcript TEXT, -- Adicionado posteriormente
-    summary TEXT,
-    video_duration VARCHAR(20),
-    published_at TIMESTAMPTZ,
-    processed_at TIMESTAMPTZ DEFAULT now(),
-    sent_to_user BOOLEAN DEFAULT false,
-    sent_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
-COMMENT ON TABLE processed_videos IS 'Vídeos legacy - manter para histórico';
 
 -- =====================================================
 -- 7. ÍNDICES PARA PERFORMANCE
@@ -269,8 +227,6 @@ CREATE TRIGGER update_system_settings_updated_at BEFORE UPDATE ON system_setting
 CREATE TRIGGER update_global_channels_updated_at BEFORE UPDATE ON global_youtube_channels
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_youtube_channels_updated_at BEFORE UPDATE ON youtube_channels
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- =====================================================
 -- 9. FUNÇÕES PRINCIPAIS (ATUALIZADAS)
@@ -402,27 +358,10 @@ BEGIN
             JOIN global_youtube_channels gyc ON ucs.global_channel_id = gyc.id
             WHERE ucs.user_id = u.id AND ucs.is_active = true
         ),
-        'channels_legacy', (
-            SELECT COALESCE(json_agg(json_build_object(
-                'id', yc.id,
-                'channel_id', yc.channel_id,
-                'name', yc.channel_name,
-                'url', yc.channel_url,
-                'subscriber_count', yc.subscriber_count,
-                'created_at', yc.created_at,
-                'is_active', yc.is_active
-            )), '[]'::json)
-            FROM youtube_channels yc
-            WHERE yc.user_id = u.id AND yc.is_active = true
-        ),
         'stats', json_build_object(
             'total_global_channels', (
                 SELECT COUNT(*) FROM user_channel_subscriptions ucs 
                 WHERE ucs.user_id = u.id AND ucs.is_active = true
-            ),
-            'total_legacy_channels', (
-                SELECT COUNT(*) FROM youtube_channels yc 
-                WHERE yc.user_id = u.id AND yc.is_active = true
             ),
             'pending_notifications', (
                 SELECT COUNT(*) FROM user_video_notifications uvn 
@@ -466,8 +405,6 @@ COMMENT ON FUNCTION cleanup_old_logs IS 'Remove logs de conversas com mais de 30
 -- Ativar RLS nas tabelas sensíveis
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE youtube_channels ENABLE ROW LEVEL SECURITY;
-ALTER TABLE processed_videos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversation_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_channel_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_video_notifications ENABLE ROW LEVEL SECURITY;
@@ -476,10 +413,6 @@ ALTER TABLE user_video_notifications ENABLE ROW LEVEL SECURITY;
 -- Usuários só veem seus próprios dados
 CREATE POLICY "Users can view own data" ON users FOR ALL USING (auth.uid() = id);
 CREATE POLICY "Users can view own subscriptions" ON subscriptions FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can view own channels" ON youtube_channels FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can view own processed videos" ON processed_videos FOR ALL USING (
-    auth.uid() IN (SELECT user_id FROM youtube_channels WHERE id = channel_id)
-);
 CREATE POLICY "Users can view own logs" ON conversation_logs FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can view own channel subscriptions" ON user_channel_subscriptions FOR ALL USING (auth.uid() = user_id);
 CREATE POLICY "Users can view own notifications" ON user_video_notifications FOR ALL USING (auth.uid() = user_id);
@@ -553,9 +486,6 @@ ESTRUTURA GLOBAL (OTIMIZADA):
 - global_processed_videos: Vídeos com resumos únicos
 - user_video_notifications: Controle de envio
 
-ESTRUTURA LEGACY:
-- youtube_channels: Compatibilidade
-- processed_videos: Histórico
 
 LOGS E ANALYTICS:
 - conversation_logs: Interações do bot
@@ -563,10 +493,10 @@ LOGS E ANALYTICS:
 - popular_channels: View de canais populares
 
 BENEFÍCIOS:
-✅ Resumos reutilizáveis (economia 75%+ OpenAI)
+✅ Resumos reutilizáveis (economia 90%+ OpenAI)
 ✅ Transcrições para qualidade superior
 ✅ Estrutura escalável
-✅ Compatibilidade com código existente
 ✅ Analytics e monitoramento
 ✅ Segurança RLS
+✅ Código limpo sem legacy
 */
