@@ -1,0 +1,302 @@
+### Resume YouTube - API Routes Testing
+### Base URL: http://localhost:3000
+
+### Variables
+@baseUrl = http://localhost:3000
+@token = eyJhbGciOiJIUzI1NiIsImtpZCI6IkkvRGM0YTRiVGpQUjR5eG0iLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL2VsdmFzY2JycnhtcHRpb295Ynh3LnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiI0NGM1YTg2NC00MDkzLTQ4NjktOWIxNC0yNTJiZThiOGY4M2YiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzUyNDk1MDU5LCJpYXQiOjE3NTI0OTE0NTksImVtYWlsIjoidm9wMTIzNEBob3RtYWlsLmNvbSIsInBob25lIjoiIiwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiZW1haWwiLCJwcm92aWRlcnMiOlsiZW1haWwiLCJnb29nbGUiXX0sInVzZXJfbWV0YWRhdGEiOnsiYXZhdGFyX3VybCI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hL0FDZzhvY0lVcXUzV3JfZkpIY0xUYS1nUnRpMEQ2X3RzOTlwcDlLNUNjN3FXTEFBdjhJS2I2eTVSYlE9czk2LWMiLCJlbWFpbCI6InZvcDEyMzRAaG90bWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZnVsbF9uYW1lIjoiVml0b3IgUGVyZWlyYSIsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZ29vZ2xlLmNvbSIsIm5hbWUiOiJWaXRvciBQZXJlaXJhIiwicGhvbmVfdmVyaWZpZWllZCI6ZmFsc2UsInBpY3R1cmUiOiJodHRwczovL2xoMy5nb29nbGV1c2VyY29udGVudC5jb20vYS9BQ2c4b2NJVXF1M1dyX2ZKSGNMVGEtZ1J0aTBENl90czk5cHA5SzVDYzdxV0xBQXY4SUtiNnk1UmJRPXM5Ni1jIiwicHJvdmlkZXJfaWQiOiIxMTQ2MzY4MjUxMjczNjczMTI5MDMiLCJzdWIiOiIxMTQ2MzY4MjUxMjczNjczMTI5MDMifSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJvYXV0aCIsInRpbWVzdGFtcCI6MTc1MjQ5MTQ1OX1dLCJzZXNzaW9uX2lkIjoiMzNlMDgyM2QtYzk3My00NTkwLWIyNGYtZTUyODhjM2Y0OWMyIiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.9WStQD3p-_l4L3087zUhCApqv4i2TymwR1cRxM5l1V0
+
+### ==============================================
+### AUTHENTICATION ROUTES
+### ==============================================
+
+### Auth - Get current session (USE THIS FIRST!)
+GET {{baseUrl}}/api/auth/session
+
+### Auth - Test auth debug
+GET {{baseUrl}}/api/test/auth
+
+### Auth - Login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+
+### Auth - Register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "phone": "+5511999999999"
+}
+
+### Auth - Logout
+POST {{baseUrl}}/auth/logout
+Content-Type: application/json
+
+### ==============================================
+### CHANNEL MANAGEMENT ROUTES
+### ==============================================
+
+### Channels - Get all user channels
+GET {{baseUrl}}/api/channels
+Authorization: Bearer {{token}}
+
+### Channels - Add new channel
+POST {{baseUrl}}/api/channels
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "url": "https://www.youtube.com/@igrejapresbiterianabereia7377",
+  "name": "Igreja Presbiteriana de Bereia"
+}
+
+### Channels - Delete channel
+DELETE {{baseUrl}}/api/channels?channelId=channel_id_here
+Authorization: Bearer {{token}}
+
+### Channels - Update channel
+PUT {{baseUrl}}/api/channels
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "id": "channel_id_here",
+  "active": true,
+  "name": "Updated Channel Name"
+}
+
+### ==============================================
+### YOUTUBE API ROUTES
+### ==============================================
+
+### YouTube - Get videos from user's channels
+GET {{baseUrl}}/api/youtube/videos
+Authorization: Bearer {{token}}
+
+### YouTube - Get videos from specific channel
+GET {{baseUrl}}/api/youtube/videos?channelId=UC_channel_id_here
+Authorization: Bearer {{token}}
+
+### YouTube - Get videos published after date
+GET {{baseUrl}}/api/youtube/videos?publishedAfter=2024-01-01T00:00:00Z
+Authorization: Bearer {{token}}
+
+### YouTube - Check for new videos (without processing)
+GET {{baseUrl}}/api/youtube/process-new-videos
+Authorization: Bearer {{token}}
+
+### YouTube - Process and save new videos
+POST {{baseUrl}}/api/youtube/process-new-videos
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+### ==============================================
+### PROCESSED VIDEOS ROUTES
+### ==============================================
+
+### Processed Videos - Get all processed videos
+GET {{baseUrl}}/api/processed-videos
+Authorization: Bearer {{token}}
+
+### Processed Videos - Get with pagination
+GET {{baseUrl}}/api/processed-videos?page=1&limit=10
+Authorization: Bearer {{token}}
+
+### Processed Videos - Filter by status
+GET {{baseUrl}}/api/processed-videos?status=pending
+Authorization: Bearer {{token}}
+
+### Processed Videos - Filter by channel
+GET {{baseUrl}}/api/processed-videos?channelId=UC_channel_id_here
+Authorization: Bearer {{token}}
+
+### Processed Videos - Sort by date
+GET {{baseUrl}}/api/processed-videos?sort=published_at&order=desc
+Authorization: Bearer {{token}}
+
+### Processed Videos - Delete video
+DELETE {{baseUrl}}/api/processed-videos?videoId=video_id_here
+Authorization: Bearer {{token}}
+
+### Processed Videos - Get statistics
+GET {{baseUrl}}/api/processed-videos/stats
+Authorization: Bearer {{token}}
+
+### ==============================================
+### STRIPE PAYMENT ROUTES (To be implemented)
+### ==============================================
+
+### Stripe - Create checkout session
+POST {{baseUrl}}/api/stripe/create-checkout-session
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "priceId": "price_stripe_id_here",
+  "successUrl": "{{baseUrl}}/dashboard/billing?success=true",
+  "cancelUrl": "{{baseUrl}}/dashboard/billing?canceled=true"
+}
+
+### Stripe - Get customer portal
+POST {{baseUrl}}/api/stripe/customer-portal
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "returnUrl": "{{baseUrl}}/dashboard/billing"
+}
+
+### Stripe - Webhook endpoint (for Stripe to call)
+POST {{baseUrl}}/api/stripe/webhook
+Content-Type: application/json
+Stripe-Signature: stripe_signature_here
+
+{
+  "webhook_payload": "stripe_webhook_data"
+}
+
+### ==============================================
+### WHATSAPP INTEGRATION (To be implemented)
+### ==============================================
+
+### WhatsApp - Send summary to user
+POST {{baseUrl}}/api/whatsapp/send-summary
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "videoId": "video_id_here",
+  "phone": "+5511999999999"
+}
+
+### WhatsApp - Get delivery status
+GET {{baseUrl}}/api/whatsapp/status?videoId=video_id_here
+Authorization: Bearer {{token}}
+
+### ==============================================
+### AI SUMMARY ROUTES (To be implemented)
+### ==============================================
+
+### AI - Generate summary for video
+POST {{baseUrl}}/api/ai/generate-summary
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "videoId": "video_id_here",
+  "provider": "openai"
+}
+
+### AI - Get summary status
+GET {{baseUrl}}/api/ai/summary-status?videoId=video_id_here
+Authorization: Bearer {{token}}
+
+### ==============================================
+### USER MANAGEMENT ROUTES
+### ==============================================
+
+### User - Get user profile
+GET {{baseUrl}}/api/user/profile
+Authorization: Bearer {{token}}
+
+### User - Update user profile
+PUT {{baseUrl}}/api/user/profile
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phone": "+5511999999999",
+  "preferences": {
+    "summary_language": "pt-BR",
+    "notification_time": "09:00"
+  }
+}
+
+### User - Get user statistics
+GET {{baseUrl}}/api/user/stats
+Authorization: Bearer {{token}}
+
+### ==============================================
+### ADMIN ROUTES (To be implemented)
+### ==============================================
+
+### Admin - Get all users
+GET {{baseUrl}}/api/admin/users
+Authorization: Bearer {{token}}
+
+### Admin - Get system statistics
+GET {{baseUrl}}/api/admin/stats
+Authorization: Bearer {{token}}
+
+### Admin - Process videos for all users
+POST {{baseUrl}}/api/admin/process-all-videos
+Authorization: Bearer {{token}}
+
+### ==============================================
+### HEALTH CHECK ROUTES
+### ==============================================
+
+### Health - API health check
+GET {{baseUrl}}/api/health
+
+### Health - Database connection check
+GET {{baseUrl}}/api/health/db
+
+### Health - YouTube API check
+GET {{baseUrl}}/api/health/youtube
+
+### Health - Stripe API check
+GET {{baseUrl}}/api/health/stripe
+
+### ==============================================
+### TESTING ROUTES
+### ==============================================
+
+### Test - Get current user session
+GET {{baseUrl}}/api/test/session
+Authorization: Bearer {{token}}
+
+### Test - Validate YouTube channel
+POST {{baseUrl}}/api/test/youtube-channel
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "url": "https://www.youtube.com/@channelname"
+}
+
+### Test - Send test WhatsApp message
+POST {{baseUrl}}/api/test/whatsapp
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "phone": "+5511999999999",
+  "message": "Test message"
+}
+
+### ==============================================
+### CRON/SCHEDULED ROUTES
+### ==============================================
+
+### Cron - Process all channels for new videos
+POST {{baseUrl}}/api/cron/process-channels
+Authorization: Bearer cron_secret_key
+
+### Cron - Generate summaries for pending videos
+POST {{baseUrl}}/api/cron/generate-summaries
+Authorization: Bearer cron_secret_key
+
+### Cron - Send summaries via WhatsApp
+POST {{baseUrl}}/api/cron/send-summaries
+Authorization: Bearer cron_secret_key
+
+### Cron - Cleanup old processed videos
+POST {{baseUrl}}/api/cron/cleanup
+Authorization: Bearer cron_secret_key

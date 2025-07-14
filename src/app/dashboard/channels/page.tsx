@@ -1,14 +1,17 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { DashboardLayout } from '@/components/dashboard/layout'
-import { ChannelList } from '@/components/channels/channel-list'
-import { AddChannelForm } from '@/components/channels/add-channel-form'
+import { AddChannelDialog } from '@/components/dashboard/add-channel-dialog'
+import { DeleteChannelDialog } from '@/components/dashboard/delete-channel-dialog'
+import { YouTubeApiTest } from '@/components/dashboard/youtube-api-test'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Plus, Youtube } from 'lucide-react'
 
 async function getUserData() {
   const supabase = await createClient()
+  const adminSupabase = createAdminClient()
   
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
@@ -23,16 +26,15 @@ async function getUserData() {
     .eq('id', user.id)
     .single()
 
-  // Get user channels
-  const { data: channels } = await supabase
+  // Get user channels using admin client to bypass RLS issues
+  const { data: channels } = await adminSupabase
     .from('youtube_channels')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
   // Check if user can add more channels
-  const { data: canAdd } = await supabase
-    .rpc('can_add_channel', { user_uuid: user.id })
+  const canAdd = (channels?.length || 0) < (profile?.max_channels || 3)
 
   return {
     user: profile,
@@ -56,14 +58,16 @@ export default async function ChannelsPage() {
             </p>
           </div>
           
-          {canAddChannel && (
-            <AddChannelForm>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" />
-                Adicionar Canal
-              </Button>
-            </AddChannelForm>
-          )}
+          <AddChannelDialog 
+            disabled={!canAddChannel}
+            maxChannels={user?.max_channels || 3}
+            currentCount={channels.length}
+          >
+            <Button disabled={!canAddChannel}>
+              <Plus className="mr-2 h-4 w-4" />
+              Adicionar Canal
+            </Button>
+          </AddChannelDialog>
         </div>
 
         {/* Stats */}
@@ -131,23 +135,89 @@ export default async function ChannelsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
-              {canAddChannel ? (
-                <AddChannelForm>
-                  <Button>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Adicionar Primeiro Canal
-                  </Button>
-                </AddChannelForm>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Você atingiu o limite de canais. Atualize sua assinatura para adicionar mais.
-                </p>
-              )}
+              <AddChannelDialog 
+                maxChannels={user?.max_channels || 3}
+                currentCount={0}
+              >
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Adicionar Primeiro Canal
+                </Button>
+              </AddChannelDialog>
             </CardContent>
           </Card>
         ) : (
-          <ChannelList channels={channels} canAddMore={canAddChannel} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {channels.map((channel) => (
+              <Card key={channel.id} className="hover:shadow-md transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center">
+                        <Youtube className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{channel.channel_name}</CardTitle>
+                        <p className="text-sm text-gray-500">
+                          {channel.subscriber_count?.toLocaleString('pt-BR')} inscritos
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      channel.is_active 
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {channel.is_active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+                </CardHeader>
+                
+                <CardContent>
+                  <div className="space-y-4">
+                    {channel.channel_description && (
+                      <p className="text-sm text-gray-600 line-clamp-2">
+                        {channel.channel_description}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center justify-between text-sm text-gray-500">
+                      <span>
+                        Adicionado {new Date(channel.created_at).toLocaleDateString('pt-BR')}
+                      </span>
+                      {channel.last_check_at && (
+                        <span>
+                          Última verificação: {new Date(channel.last_check_at).toLocaleDateString('pt-BR')}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <Button variant="outline" size="sm" asChild>
+                        <a 
+                          href={channel.channel_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Ver Canal
+                        </a>
+                      </Button>
+                      
+                      <DeleteChannelDialog channelId={channel.id} channelName={channel.channel_name}>
+                        <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
+                          Remover
+                        </Button>
+                      </DeleteChannelDialog>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         )}
+        
+        {/* API Testing */}
+        <YouTubeApiTest />
       </div>
     </DashboardLayout>
   )

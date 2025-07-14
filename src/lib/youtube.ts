@@ -14,6 +14,24 @@ export interface YouTubeChannelInfo {
   }
 }
 
+export interface YouTubeVideo {
+  id: string
+  title: string
+  description: string
+  publishedAt: string
+  channelId: string
+  channelTitle: string
+  thumbnails: {
+    default: { url: string }
+    medium: { url: string }
+    high: { url: string }
+  }
+  duration: string
+  viewCount: string
+  likeCount: string
+  commentCount: string
+}
+
 export function extractChannelIdFromUrl(url: string): string | null {
   try {
     const urlObj = new URL(url)
@@ -137,4 +155,118 @@ export function isValidYouTubeUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export async function getChannelVideos(
+  channelId: string, 
+  maxResults: number = 10,
+  publishedAfter?: string
+): Promise<YouTubeVideo[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  
+  if (!apiKey) {
+    throw new Error('YouTube API key not configured')
+  }
+
+  try {
+    // First, get video IDs from channel
+    let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&type=video&order=date&maxResults=${maxResults}&key=${apiKey}`
+    
+    if (publishedAfter) {
+      searchUrl += `&publishedAfter=${publishedAfter}`
+    }
+
+    const searchResponse = await fetch(searchUrl)
+    const searchData = await searchResponse.json()
+
+    if (!searchResponse.ok) {
+      throw new Error(`YouTube API error: ${searchResponse.status} - ${searchData.error?.message}`)
+    }
+
+    if (!searchData.items || searchData.items.length === 0) {
+      return []
+    }
+
+    // Extract video IDs
+    const videoIds = searchData.items.map((item: any) => item.id.videoId).join(',')
+
+    // Get detailed video information
+    const videosResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${apiKey}`
+    )
+    const videosData = await videosResponse.json()
+
+    if (!videosResponse.ok) {
+      throw new Error(`YouTube API error: ${videosResponse.status} - ${videosData.error?.message}`)
+    }
+
+    return videosData.items.map((video: any) => ({
+      id: video.id,
+      title: video.snippet.title,
+      description: video.snippet.description,
+      publishedAt: video.snippet.publishedAt,
+      channelId: video.snippet.channelId,
+      channelTitle: video.snippet.channelTitle,
+      thumbnails: video.snippet.thumbnails,
+      duration: video.contentDetails.duration,
+      viewCount: video.statistics.viewCount || '0',
+      likeCount: video.statistics.likeCount || '0',
+      commentCount: video.statistics.commentCount || '0'
+    }))
+  } catch (error) {
+    console.error('Error fetching channel videos:', error)
+    throw error
+  }
+}
+
+export async function getLatestVideosFromChannels(
+  channelIds: string[], 
+  publishedAfter?: string
+): Promise<YouTubeVideo[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  
+  if (!apiKey) {
+    throw new Error('YouTube API key not configured')
+  }
+
+  try {
+    const allVideos: YouTubeVideo[] = []
+
+    // Process channels in batches to avoid rate limits
+    for (const channelId of channelIds) {
+      const videos = await getChannelVideos(channelId, 5, publishedAfter)
+      allVideos.push(...videos)
+    }
+
+    // Sort by publish date (newest first)
+    return allVideos.sort((a, b) => 
+      new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+    )
+  } catch (error) {
+    console.error('Error fetching latest videos:', error)
+    throw error
+  }
+}
+
+export function parseDuration(duration: string): number {
+  // Parse YouTube duration format (PT15M33S) to seconds
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+  if (!match) return 0
+
+  const hours = parseInt(match[1] || '0', 10)
+  const minutes = parseInt(match[2] || '0', 10)
+  const seconds = parseInt(match[3] || '0', 10)
+
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+export function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = seconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
 }

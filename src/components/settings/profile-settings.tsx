@@ -50,11 +50,11 @@ export function ProfileSettings({ user, authUser }: ProfileSettingsProps) {
   const onSubmit = async (values: z.infer<typeof profileSchema>) => {
     setIsLoading(true)
     try {
+      // Update only name for now (email will be added when column exists)
       const { error } = await supabase
         .from('users')
         .update({
           name: values.name,
-          email: values.email,
           updated_at: new Date().toISOString()
         })
         .eq('id', authUser.id)

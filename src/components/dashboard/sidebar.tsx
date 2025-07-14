@@ -90,7 +90,7 @@ export function Sidebar({ user }: SidebarProps) {
               {user?.name || 'Usuário'}
             </p>
             <p className="text-xs text-gray-500 truncate">
-              {user?.email || ''}
+              {user?.email || 'Email em configuração'}
             </p>
           </div>
         </div>
