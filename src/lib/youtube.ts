@@ -284,13 +284,20 @@ export function formatDuration(seconds: number): string {
 
 export async function getVideoTranscript(videoId: string): Promise<string | null> {
   try {
+    const rapidApiKey = process.env.RAPIDAPI_KEY;
+    
+    if (!rapidApiKey) {
+      console.error('RAPIDAPI_KEY not configured');
+      return null;
+    }
+
     const url = `https://youtube-transcripts.p.rapidapi.com/youtube/transcript?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${videoId}&videoId=${videoId}&chunkSize=500&text=false`;
     
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'x-rapidapi-host': 'youtube-transcripts.p.rapidapi.com',
-        'x-rapidapi-key': '1108173730mshe4342a86d26ba8cp1c37f3jsn46254c3798ef'
+        'x-rapidapi-key': rapidApiKey
       }
     });
     
