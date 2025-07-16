@@ -150,3 +150,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 - **Database changes**: Update types in `src/lib/database.types.ts`
 - **New API routes**: Follow patterns in `src/app/api/`
 - **Styling**: Use Tailwind classes with Shadcn/ui components
+
+## Memory Notes
+
+- **Task Tracking**: Always analyze the `continue.md` file to resume work on the project.
