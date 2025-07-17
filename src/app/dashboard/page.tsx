@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { DashboardLayout } from '@/components/dashboard/layout'
+import { hasCompletedOnboarding, getOnboardingStep } from '@/lib/onboarding-helpers'
+import { UsageMeter } from '@/components/dashboard/usage-meter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { 
@@ -30,6 +32,12 @@ async function getUserData() {
     .select('*')
     .eq('id', user.id)
     .single()
+
+  // Check if user completed onboarding
+  if (profile && !hasCompletedOnboarding(profile)) {
+    const onboardingStep = getOnboardingStep(profile)
+    redirect(onboardingStep)
+  }
 
   // Get active subscriptions count
   const { count: channelsCount } = await supabase
@@ -111,6 +119,9 @@ export default async function DashboardPage() {
             Acompanhe seus canais do YouTube e receba resumos inteligentes via WhatsApp
           </p>
         </div>
+
+        {/* Usage Meter */}
+        <UsageMeter />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

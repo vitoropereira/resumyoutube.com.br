@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { headers } from 'next/headers'
-import { stripe } from '@/lib/stripe'
+import { stripe, SUBSCRIPTION_PLANS, EXTRA_SUMMARY_PACKS } from '@/lib/stripe'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
@@ -25,42 +26,86 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient()
+    const adminSupabase = createAdminClient()
 
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         const userId = session.metadata?.user_id
+        const sessionType = session.metadata?.type || 'subscription'
 
         if (!userId) {
           console.error('No user_id in session metadata')
           break
         }
 
-        // Get the subscription from Stripe
-        const subscription = await stripe.subscriptions.retrieve(
-          session.subscription as string
-        )
+        if (sessionType === 'extra_pack') {
+          // Handle extra summary pack purchase
+          const packKey = session.metadata?.pack
+          const extraSummaries = parseInt(session.metadata?.extra_summaries || '0')
 
-        // Update subscription in database
-        const { error } = await supabase
-          .from('subscriptions')
-          .upsert({
-            user_id: userId,
-            stripe_subscription_id: subscription.id,
-            stripe_customer_id: subscription.customer as string,
-            status: subscription.status,
-            amount_cents: subscription.items.data[0].price.unit_amount || 3990,
-            current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-          })
+          if (packKey && extraSummaries > 0) {
+            console.log(`Processing extra pack purchase: ${packKey} (${extraSummaries} summaries) for user ${userId}`)
 
-        if (error) {
-          console.error('Error updating subscription:', error)
+            // Add extra summaries to user account
+            const { error } = await adminSupabase
+              .from('users')
+              .update({
+                extra_summaries: adminSupabase.rpc('COALESCE', ['extra_summaries', 0]) + extraSummaries
+              })
+              .eq('id', userId)
+
+            if (error) {
+              console.error('Error adding extra summaries:', error)
+            } else {
+              console.log(`✅ Added ${extraSummaries} extra summaries to user ${userId}`)
+            }
+          }
         } else {
-          // Update user subscription status
-          await supabase
-            .from('users')
-            .update({ subscription_status: 'active' })
-            .eq('id', userId)
+          // Handle subscription
+          const subscription = await stripe.subscriptions.retrieve(
+            session.subscription as string
+          )
+
+          const planKey = session.metadata?.plan || 'starter'
+          const summaryLimit = parseInt(session.metadata?.summary_limit || '50')
+
+          // Update subscription in database
+          const { error } = await supabase
+            .from('subscriptions')
+            .upsert({
+              user_id: userId,
+              stripe_subscription_id: subscription.id,
+              stripe_customer_id: subscription.customer as string,
+              status: subscription.status,
+              plan_name: planKey,
+              amount_cents: subscription.items.data[0].price.unit_amount || 2990,
+              current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
+              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+              trial_end: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+            })
+
+          if (error) {
+            console.error('Error updating subscription:', error)
+          } else {
+            // Calculate next reset date (first day of next month)
+            const now = new Date()
+            const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+            
+            // Update user with new plan details
+            await adminSupabase
+              .from('users')
+              .update({ 
+                subscription_status: subscription.status,
+                monthly_summary_limit: summaryLimit,
+                monthly_summary_used: 0, // Reset usage for new subscription
+                summary_reset_date: nextReset.toISOString(),
+                trial_end_date: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+              })
+              .eq('id', userId)
+
+            console.log(`✅ Updated user ${userId} with plan ${planKey} (${summaryLimit} summaries/month)`)
+          }
         }
         break
       }

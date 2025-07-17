@@ -127,7 +127,7 @@ export async function POST() {
               } else {
                 console.log(`✅ Video inserted with ID: ${insertedVideo.id}`);
 
-                // Create notifications for all users subscribed to this channel
+                // Create notifications for users who can generate summaries
                 const { data: subscribers } = await adminSupabase
                   .from("user_channel_subscriptions")
                   .select("user_id")
@@ -135,25 +135,47 @@ export async function POST() {
                   .eq("is_active", true);
 
                 if (subscribers && subscribers.length > 0) {
-                  const notifications = subscribers.map((sub) => ({
-                    user_id: sub.user_id,
-                    global_video_id: insertedVideo.id,
-                    is_sent: false,
-                  }));
+                  const validNotifications = [];
+                  let skippedUsers = 0;
 
-                  const { error: notificationError } = await adminSupabase
-                    .from("user_video_notifications")
-                    .insert(notifications);
+                  // Check each user's summary quota before creating notification
+                  for (const sub of subscribers) {
+                    const { data: canGenerate } = await adminSupabase
+                      .rpc("can_generate_summary", { user_uuid: sub.user_id });
 
-                  if (notificationError) {
-                    console.error(
-                      "Error creating notifications:",
-                      notificationError
-                    );
+                    if (canGenerate) {
+                      validNotifications.push({
+                        user_id: sub.user_id,
+                        global_video_id: insertedVideo.id,
+                        is_sent: false,
+                      });
+
+                      // Increment summary usage for this user
+                      await adminSupabase
+                        .rpc("increment_summary_usage", { user_uuid: sub.user_id });
+                    } else {
+                      skippedUsers++;
+                      console.log(`⚠️ User ${sub.user_id} has reached summary limit`);
+                    }
+                  }
+
+                  if (validNotifications.length > 0) {
+                    const { error: notificationError } = await adminSupabase
+                      .from("user_video_notifications")
+                      .insert(validNotifications);
+
+                    if (notificationError) {
+                      console.error(
+                        "Error creating notifications:",
+                        notificationError
+                      );
+                    } else {
+                      console.log(
+                        `✅ Created ${validNotifications.length} notifications (${skippedUsers} users skipped due to limits)`
+                      );
+                    }
                   } else {
-                    console.log(
-                      `✅ Created ${notifications.length} notifications`
-                    );
+                    console.log("❌ No users can receive summaries (all have reached limits)");
                   }
                 }
 
