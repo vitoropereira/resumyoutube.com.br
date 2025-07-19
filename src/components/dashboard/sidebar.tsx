@@ -11,7 +11,8 @@ import {
   CreditCard, 
   Settings, 
   LogOut,
-  User
+  User,
+  BarChart3
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -32,6 +33,11 @@ const navigation = [
     name: 'Resumos',
     href: '/dashboard/summaries',
     icon: FileText,
+  },
+  {
+    name: 'Uso Detalhado',
+    href: '/dashboard/usage',
+    icon: BarChart3,
   },
   {
     name: 'Assinatura',

@@ -8,12 +8,30 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { ArrowLeft, ArrowRight, CreditCard, CheckCircle, Shield, AlertCircle } from 'lucide-react'
 import { SUBSCRIPTION_PLANS } from '@/lib/types'
+import { ENTERPRISE_PLAN_INFO } from '@/lib/stripe'
+import { useOnboarding } from '@/hooks/use-onboarding'
+
+interface OnboardingData {
+  phone_number?: string
+  business_type?: string
+  content_interest?: string
+  summary_frequency?: string
+}
 
 export default function PaymentPage() {
   const router = useRouter()
   const [selectedPlan, setSelectedPlan] = useState<string>('pro') // Default to Pro plan
   const [isLoading, setIsLoading] = useState(false)
+  const [isLoadingData, setIsLoadingData] = useState(true)
   const [error, setError] = useState('')
+  const [onboardingData, setOnboardingData] = useState<OnboardingData | null>(null)
+  
+  const { loadData } = useOnboarding()
+
+  // Carregar dados do onboarding (banco + localStorage como fallback)
+  useEffect(() => {
+    loadOnboardingData()
+  }, [])
 
   // Carregar plano salvo do localStorage
   useEffect(() => {
@@ -22,6 +40,58 @@ export default function PaymentPage() {
       setSelectedPlan(savedPlan)
     }
   }, [])
+
+  const loadOnboardingData = async () => {
+    try {
+      setIsLoadingData(true)
+      
+      // Primeiro, tentar carregar do banco
+      const bankData = await loadData()
+      
+      if (bankData && (bankData.phone_number || bankData.business_type)) {
+        setOnboardingData(bankData)
+        console.log('Dados carregados do banco:', bankData)
+        return
+      }
+
+      // Fallback: carregar do localStorage
+      const phone = localStorage.getItem('onboarding_phone')
+      const profileData = localStorage.getItem('onboarding_profile')
+
+      if (phone || profileData) {
+        const localData: OnboardingData = {}
+        
+        if (phone) {
+          localData.phone_number = phone
+        }
+        
+        if (profileData) {
+          try {
+            const profile = JSON.parse(profileData)
+            localData.business_type = profile.business_type
+            localData.content_interest = profile.content_interest
+            localData.summary_frequency = profile.summary_frequency
+          } catch (e) {
+            console.error('Erro ao parsear dados do localStorage:', e)
+          }
+        }
+        
+        setOnboardingData(localData)
+        console.log('Dados carregados do localStorage:', localData)
+      } else {
+        // Nenhum dado encontrado - redirecionar para início do onboarding
+        setError('Dados do onboarding não encontrados. Você será redirecionado para o início.')
+        setTimeout(() => {
+          router.push('/onboarding/welcome')
+        }, 3000)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados do onboarding:', err)
+      setError('Erro ao carregar dados. Verifique sua conexão.')
+    } finally {
+      setIsLoadingData(false)
+    }
+  }
 
   const handlePlanSelect = (planKey: string) => {
     setSelectedPlan(planKey)
@@ -34,17 +104,35 @@ export default function PaymentPage() {
     setIsLoading(true)
 
     try {
-      // Obter dados salvos do onboarding
-      const phone = localStorage.getItem('onboarding_phone')
-      const profileData = localStorage.getItem('onboarding_profile')
-
-      if (!phone || !profileData) {
-        setError('Dados do onboarding não encontrados. Reinicie o processo.')
+      console.log('🚀 Starting checkout process');
+      
+      // Verificar se temos dados do onboarding
+      if (!onboardingData) {
+        console.log('❌ No onboarding data found');
+        setError('Dados do onboarding não encontrados. Recarregando dados...')
+        await loadOnboardingData()
         setIsLoading(false)
         return
       }
 
-      const profile = JSON.parse(profileData)
+      console.log('📋 Onboarding data available:', onboardingData);
+
+      // Permitir checkout mesmo sem dados completos (são opcionais)
+      const checkoutData = {
+        type: 'subscription',
+        plan: selectedPlan,
+        trial_days: 7,
+        onboarding_data: {
+          phone_number: onboardingData.phone_number,
+          business_type: onboardingData.business_type,
+          content_interest: onboardingData.content_interest,
+          summary_frequency: onboardingData.summary_frequency
+        },
+        success_url: `${window.location.origin}/onboarding/complete`,
+        cancel_url: `${window.location.origin}/onboarding/payment`
+      };
+
+      console.log('💳 Sending checkout request:', checkoutData);
 
       // Criar checkout no Stripe
       const response = await fetch('/api/billing/checkout', {
@@ -52,31 +140,23 @@ export default function PaymentPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          type: 'subscription',
-          plan: selectedPlan,
-          trial_days: 7,
-          onboarding_data: {
-            phone_number: phone,
-            business_type: profile.business_type,
-            content_interest: profile.content_interest,
-            summary_frequency: profile.summary_frequency
-          },
-          success_url: `${window.location.origin}/onboarding/complete`,
-          cancel_url: `${window.location.origin}/onboarding/payment`
-        }),
+        body: JSON.stringify(checkoutData),
       })
 
+      console.log('📡 Checkout response status:', response.status);
+
       const data = await response.json()
+      console.log('📄 Checkout response data:', data);
 
       if (!response.ok) {
         throw new Error(data.error || 'Erro ao criar checkout')
       }
 
+      console.log('✅ Redirecting to Stripe:', data.checkout_url);
       // Redirecionar para o Stripe Checkout
       window.location.href = data.checkout_url
     } catch (error) {
-      console.error('Erro no checkout:', error)
+      console.error('❌ Erro no checkout:', error)
       setError(error instanceof Error ? error.message : 'Erro interno. Tente novamente.')
     } finally {
       setIsLoading(false)
@@ -85,6 +165,29 @@ export default function PaymentPage() {
 
   const handleBack = () => {
     router.push('/onboarding/profile')
+  }
+
+  // Loading state
+  if (isLoadingData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-6">
+            <div className="text-center space-y-4">
+              <div className="mx-auto w-16 h-16 bg-orange-600 rounded-full flex items-center justify-center">
+                <CreditCard className="w-8 h-8 text-white animate-pulse" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold">Carregando seus dados...</h2>
+                <p className="text-gray-600 text-sm mt-2">
+                  Buscando informações do seu onboarding
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -117,6 +220,7 @@ export default function PaymentPage() {
 
           {/* Planos */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* 3 Planos Principais */}
             {Object.entries(SUBSCRIPTION_PLANS).map(([key, plan]) => (
               <Card 
                 key={key}
@@ -140,7 +244,7 @@ export default function PaymentPage() {
                     <span className="text-base font-normal text-gray-600">/mês</span>
                   </div>
                   <p className="text-sm text-gray-600">
-                    {plan.monthly_summary_limit === 9999 ? 'Ilimitado' : `${plan.monthly_summary_limit} resumos`}/mês
+                    {plan.monthly_summary_limit} resumos/mês
                   </p>
                 </CardHeader>
                 
@@ -162,6 +266,41 @@ export default function PaymentPage() {
                 </CardContent>
               </Card>
             ))}
+
+            {/* Card Enterprise - Apenas Informativo */}
+            <Card className="relative border-2 border-dashed border-gray-300 bg-gray-50">
+              <CardHeader className="text-center pb-2">
+                <CardTitle className="text-xl text-gray-700">{ENTERPRISE_PLAN_INFO.name}</CardTitle>
+                <div className="text-2xl font-bold text-gray-600">
+                  Sob Consulta
+                </div>
+                <p className="text-sm text-gray-600">
+                  {ENTERPRISE_PLAN_INFO.description}
+                </p>
+              </CardHeader>
+              
+              <CardContent className="pt-0">
+                <ul className="space-y-2">
+                  {ENTERPRISE_PLAN_INFO.features.map((feature, index) => (
+                    <li key={index} className="flex items-center text-sm text-gray-600">
+                      <CheckCircle className="w-4 h-4 text-gray-400 mr-2 flex-shrink-0" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                
+                <div className="mt-4 p-3 bg-blue-50 rounded text-center">
+                  <p className="text-xs text-blue-800 font-medium">
+                    {ENTERPRISE_PLAN_INFO.contact_message}
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-2 text-blue-600 border-blue-300" asChild>
+                    <a href="mailto:contato@resumeyoutube.com.br">
+                      Entrar em Contato
+                    </a>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Informações de Segurança */}

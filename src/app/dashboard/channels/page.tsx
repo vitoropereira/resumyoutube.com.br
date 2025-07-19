@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Youtube } from "lucide-react";
+import { Plus, Youtube, FileText, Users, BarChart3 } from "lucide-react";
 
 async function getUserData() {
   const supabase = await createClient();
@@ -60,15 +60,23 @@ async function getUserData() {
     .eq("is_active", true)
     .order("subscribed_at", { ascending: false });
 
-  // Check if user can add more channels using global function
-  const { data: canAdd } = await adminSupabase.rpc("can_add_global_channel", {
-    user_uuid: user.id,
+  // Get summary counts for each channel (simplified)
+  const subscriptionsWithSummaries = (subscriptions || []).map((subscription) => {
+    return {
+      ...subscription,
+      summaryCount: 0, // Will be calculated later when we have proper data
+    };
   });
+
+  // Since channels are unlimited, always allow adding channels
+  // Only limit based on summary quota (handled in the backend)
+  const canAdd = true;
+  
   console.log("Can add channel:", canAdd);
   return {
     user: profile,
-    subscriptions: subscriptions || [],
-    canAddChannel: canAdd || false,
+    subscriptions: subscriptionsWithSummaries || [],
+    canAddChannel: canAdd,
   };
 }
 
@@ -78,6 +86,7 @@ export default async function ChannelsPage() {
   return (
     <DashboardLayout title="Meus Canais" user={user}>
       <div className="space-y-6">
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -91,7 +100,7 @@ export default async function ChannelsPage() {
 
           <AddChannelDialog
             disabled={!canAddChannel}
-            maxChannels={user?.max_channels || 3}
+            maxChannels={999} // Unlimited channels
             currentCount={subscriptions.length}
           >
             <Button disabled={!canAddChannel}>
@@ -101,8 +110,49 @@ export default async function ChannelsPage() {
           </AddChannelDialog>
         </div>
 
+        {/* Summary Usage Progress */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <FileText className="mr-2 h-5 w-5" />
+              Uso de Resumos Este Mês
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span>Resumos utilizados</span>
+                <span>
+                  {user?.monthly_summary_used || 0}/{user?.monthly_summary_limit || 0}
+                  {user?.extra_summaries && user.extra_summaries > 0 && (
+                    <span className="text-green-600"> + {user.extra_summaries} extras</span>
+                  )}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ 
+                    width: `${Math.min(
+                      ((user?.monthly_summary_used || 0) / (user?.monthly_summary_limit || 1)) * 100, 
+                      100
+                    )}%` 
+                  }}
+                ></div>
+              </div>
+              <div className="text-xs text-gray-500">
+                {user?.summary_reset_date && (
+                  <span>
+                    Próximo reset: {new Date(user.summary_reset_date).toLocaleDateString('pt-BR')}
+                  </span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Stats */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -115,7 +165,7 @@ export default async function ChannelsPage() {
                 {subscriptions.filter((s) => s.is_active).length}
               </div>
               <p className="text-xs text-muted-foreground">
-                de {user?.max_channels || 3} permitidos
+                monitoramento ativo
               </p>
             </CardContent>
           </Card>
@@ -135,18 +185,34 @@ export default async function ChannelsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Status</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Resumos Mensais
+              </CardTitle>
+              <FileText className="h-4 w-4 text-green-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {canAddChannel ? "Pode Adicionar" : "Limite Atingido"}
+                {user?.monthly_summary_used || 0}/{user?.monthly_summary_limit || 0}
               </div>
               <p className="text-xs text-muted-foreground">
-                {canAddChannel
-                  ? `${
-                      (user?.max_channels || 3) - subscriptions.length
-                    } slots restantes`
-                  : "Cancele uma inscrição para adicionar outro canal"}
+                utilizados este mês
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Resumos Extras
+              </CardTitle>
+              <BarChart3 className="h-4 w-4 text-purple-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {user?.extra_summaries || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                créditos extras
               </p>
             </CardContent>
           </Card>
@@ -159,12 +225,14 @@ export default async function ChannelsPage() {
               <Youtube className="mx-auto h-12 w-12 text-gray-400" />
               <CardTitle>Nenhuma inscrição ativa</CardTitle>
               <CardDescription>
-                Inscreva-se em canais do YouTube para monitorar
+                Inscreva-se em canais do YouTube para monitorar.
+                <br />
+                <strong>Lembre-se:</strong> Canais são ilimitados, mas você tem {user?.monthly_summary_limit || 0} resumos por mês.
               </CardDescription>
             </CardHeader>
             <CardContent className="text-center">
               <AddChannelDialog
-                maxChannels={user?.max_channels || 3}
+                maxChannels={999} // Unlimited channels
                 currentCount={0}
               >
                 <Button>
@@ -219,20 +287,32 @@ export default async function ChannelsPage() {
                         </p>
                       )}
 
-                      <div className="flex items-center justify-between text-sm text-gray-500">
-                        <span>
-                          Inscrito em{" "}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-gray-500">
+                        <div>
+                          <strong>Inscrito em:</strong>{" "}
                           {new Date(
                             subscription.subscribed_at
                           ).toLocaleDateString("pt-BR")}
-                        </span>
+                        </div>
                         {channel.last_check_at && (
-                          <span>
-                            Última verificação:{" "}
+                          <div>
+                            <strong>Última verificação:</strong>{" "}
                             {new Date(channel.last_check_at).toLocaleDateString(
                               "pt-BR"
                             )}
-                          </span>
+                          </div>
+                        )}
+                        {channel.video_count && (
+                          <div>
+                            <strong>Total de vídeos:</strong>{" "}
+                            {channel.video_count.toLocaleString("pt-BR")}
+                          </div>
+                        )}
+                        {channel.subscriber_count && (
+                          <div>
+                            <strong>Inscritos:</strong>{" "}
+                            {channel.subscriber_count.toLocaleString("pt-BR")}
+                          </div>
                         )}
                       </div>
 

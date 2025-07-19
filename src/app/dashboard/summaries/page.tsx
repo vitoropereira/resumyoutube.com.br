@@ -4,7 +4,7 @@ import { DashboardLayout } from '@/components/dashboard/layout'
 import { SummaryList } from '@/components/summaries/summary-list'
 import { SummaryFilters } from '@/components/summaries/summary-filters'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { FileText, Clock, CheckCircle, AlertCircle } from 'lucide-react'
+import { FileText, Clock, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react'
 
 async function getUserData() {
   const supabase = await createClient()
@@ -72,25 +72,30 @@ export default async function SummariesPage() {
     return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear()
   }).length
 
+  // Get unique channels that have generated summaries
+  const uniqueChannels = new Set(
+    notifications.map(n => n.global_processed_videos?.global_youtube_channels?.id)
+  ).size
+
   const stats = [
     {
-      title: 'Total de Vídeos',
+      title: 'Total de Resumos',
       value: totalNotifications,
-      description: 'Todos os vídeos recebidos',
+      description: 'Todos os resumos recebidos',
       icon: FileText,
       color: 'text-blue-500',
     },
     {
       title: 'Este Mês',
       value: thisMonthNotifications,
-      description: 'de 30 permitidos',
+      description: `de ${user?.monthly_summary_limit || 0} do seu plano`,
       icon: Clock,
       color: 'text-green-500',
     },
     {
       title: 'Enviados',
       value: sentNotifications,
-      description: 'Notificações entregues',
+      description: 'Entregues no WhatsApp',
       icon: CheckCircle,
       color: 'text-emerald-500',
     },
@@ -108,11 +113,18 @@ export default async function SummariesPage() {
       <div className="space-y-6">
         {/* Header */}
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Histórico de Vídeos</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Histórico de Resumos</h2>
           <p className="text-gray-600">
-            Visualize e gerencie todas as notificações de vídeos recebidas
+            Visualize e gerencie todos os resumos de vídeos recebidos via WhatsApp
           </p>
+          {totalNotifications > 0 && (
+            <div className="mt-2 flex items-center gap-4 text-sm text-gray-500">
+              <span>📊 {totalNotifications} resumos de {uniqueChannels} canais diferentes</span>
+              <span>• {thisMonthNotifications} resumos este mês</span>
+            </div>
+          )}
         </div>
+
 
         {/* Stats */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -139,9 +151,11 @@ export default async function SummariesPage() {
           <Card>
             <CardHeader className="text-center">
               <FileText className="mx-auto h-12 w-12 text-gray-400" />
-              <CardTitle>Nenhuma notificação encontrada</CardTitle>
+              <CardTitle>Nenhum resumo encontrado</CardTitle>
               <CardDescription>
-                Inscreva-se em canais do YouTube e aguarde novos vídeos serem processados
+                Inscreva-se em canais do YouTube e aguarde novos vídeos serem processados.
+                <br />
+                Você tem {user?.monthly_summary_limit || 0} resumos disponíveis este mês.
               </CardDescription>
             </CardHeader>
           </Card>

@@ -123,13 +123,6 @@ export const SUBSCRIPTION_PLANS: Record<string, SubscriptionPlan> = {
     monthly_summary_limit: 500,
     features: ['500 resumos/mês', 'Canais ilimitados', 'WhatsApp integrado', 'Suporte 24/7', 'Analytics avançado', 'API privada'],
   },
-  enterprise: {
-    name: 'Enterprise',
-    price_cents: 19990,
-    price_display: 'R$ 199,90',
-    monthly_summary_limit: 9999,
-    features: ['Resumos ilimitados', 'Canais ilimitados', 'WhatsApp integrado', 'Suporte dedicado', 'Analytics enterprise', 'API privada', 'White label'],
-  },
 }
 
 // ===================================

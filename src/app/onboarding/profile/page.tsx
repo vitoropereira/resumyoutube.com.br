@@ -71,6 +71,7 @@ export default function ProfilePage() {
   const [summaryFrequency, setSummaryFrequency] = useState<SummaryFrequency>()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
 
   // Carregar dados salvos do localStorage
   useEffect(() => {
@@ -102,27 +103,42 @@ export default function ProfilePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-
-    if (!businessType || !contentInterest || !summaryFrequency) {
-      setError('Por favor, responda todas as perguntas')
-      return
-    }
-
     setIsLoading(true)
 
     try {
-      // Salvar no localStorage temporariamente
+      // Preparar dados para salvar (todos são opcionais)
       const profileData = {
         business_type: businessType,
         content_interest: contentInterest,
         summary_frequency: summaryFrequency
       }
       
+      // Salvar no localStorage como backup
       localStorage.setItem('onboarding_profile', JSON.stringify(profileData))
       
+      // Tentar salvar no banco de dados
+      try {
+        setSaveStatus('saving')
+        console.log('Tentando salvar dados no banco:', profileData)
+        const success = await saveData(profileData)
+        if (success) {
+          console.log('✅ Dados salvos no banco com sucesso')
+          setSaveStatus('saved')
+        } else {
+          console.log('❌ Erro ao salvar no banco, continuando com localStorage')
+          setSaveStatus('error')
+        }
+      } catch (dbError) {
+        console.error('❌ Erro ao salvar no banco:', dbError)
+        setSaveStatus('error')
+        // Continua mesmo se falhar o salvamento no banco
+      }
+      
+      // Pequeno delay para melhor UX
       await new Promise(resolve => setTimeout(resolve, 500))
       router.push('/onboarding/payment')
     } catch (error) {
+      console.error('Erro no handleSubmit:', error)
       setError('Erro ao salvar perfil. Tente novamente.')
     } finally {
       setIsLoading(false)
@@ -152,18 +168,26 @@ export default function ProfilePage() {
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Pergunta 1: Tipo de Negócio */}
             <div className="space-y-4">
-              <Label className="text-lg font-semibold">1. Como você pretende usar o Resume YouTube?</Label>
+              <Label className="text-lg font-semibold">
+                1. Como você pretende usar o Resume YouTube?
+              </Label>
               <RadioGroup value={businessType} onValueChange={(value) => setBusinessType(value as BusinessType)}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {BUSINESS_TYPES.map((type) => {
                     const config = businessTypeLabels[type]
                     const Icon = config.icon
+                    const isSelected = businessType === type
+                    const uniqueId = `business-${type}`
                     return (
                       <div key={type} className="relative">
-                        <RadioGroupItem value={type} id={type} className="peer sr-only" />
+                        <RadioGroupItem value={type} id={uniqueId} className="sr-only" />
                         <Label
-                          htmlFor={type}
-                          className="flex flex-col items-start space-y-2 rounded-lg border-2 border-gray-200 p-4 hover:bg-gray-50 peer-checked:border-purple-600 peer-checked:bg-purple-50 cursor-pointer transition-all"
+                          htmlFor={uniqueId}
+                          className={`flex flex-col items-start space-y-2 rounded-lg border-2 p-4 cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'border-purple-600 bg-purple-50' 
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
                         >
                           <div className="flex items-center space-x-3">
                             <Icon className="w-5 h-5 text-purple-600" />
@@ -180,37 +204,55 @@ export default function ProfilePage() {
 
             {/* Pergunta 2: Interesse de Conteúdo */}
             <div className="space-y-4">
-              <Label className="text-lg font-semibold">2. Qual seu principal interesse de conteúdo?</Label>
+              <Label className="text-lg font-semibold">
+                2. Qual seu principal interesse de conteúdo?
+              </Label>
               <RadioGroup value={contentInterest} onValueChange={(value) => setContentInterest(value as ContentInterest)}>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {CONTENT_INTERESTS.map((interest) => (
-                    <div key={interest} className="relative">
-                      <RadioGroupItem value={interest} id={interest} className="peer sr-only" />
-                      <Label
-                        htmlFor={interest}
-                        className="flex items-center justify-center rounded-lg border-2 border-gray-200 p-3 hover:bg-gray-50 peer-checked:border-purple-600 peer-checked:bg-purple-50 cursor-pointer transition-all text-center"
-                      >
-                        {contentInterestLabels[interest]}
-                      </Label>
-                    </div>
-                  ))}
+                  {CONTENT_INTERESTS.map((interest) => {
+                    const isSelected = contentInterest === interest
+                    const uniqueId = `content-${interest}`
+                    return (
+                      <div key={interest} className="relative">
+                        <RadioGroupItem value={interest} id={uniqueId} className="sr-only" />
+                        <Label
+                          htmlFor={uniqueId}
+                          className={`flex items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all text-center ${
+                            isSelected 
+                              ? 'border-purple-600 bg-purple-50' 
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          {contentInterestLabels[interest]}
+                        </Label>
+                      </div>
+                    )
+                  })}
                 </div>
               </RadioGroup>
             </div>
 
             {/* Pergunta 3: Frequência de Resumos */}
             <div className="space-y-4">
-              <Label className="text-lg font-semibold">3. Com que frequência quer receber resumos?</Label>
+              <Label className="text-lg font-semibold">
+                3. Com que frequência quer receber resumos?
+              </Label>
               <RadioGroup value={summaryFrequency} onValueChange={(value) => setSummaryFrequency(value as SummaryFrequency)}>
                 <div className="space-y-3">
                   {SUMMARY_FREQUENCIES.map((frequency) => {
                     const config = summaryFrequencyLabels[frequency]
+                    const isSelected = summaryFrequency === frequency
+                    const uniqueId = `frequency-${frequency}`
                     return (
                       <div key={frequency} className="relative">
-                        <RadioGroupItem value={frequency} id={frequency} className="peer sr-only" />
+                        <RadioGroupItem value={frequency} id={uniqueId} className="sr-only" />
                         <Label
-                          htmlFor={frequency}
-                          className="flex items-center justify-between rounded-lg border-2 border-gray-200 p-4 hover:bg-gray-50 peer-checked:border-purple-600 peer-checked:bg-purple-50 cursor-pointer transition-all"
+                          htmlFor={uniqueId}
+                          className={`flex items-center justify-between rounded-lg border-2 p-4 cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'border-purple-600 bg-purple-50' 
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
                         >
                           <div>
                             <div className="font-medium">{config.label}</div>
@@ -238,20 +280,33 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            <Button 
-              type="submit"
-              disabled={isLoading || !businessType || !contentInterest || !summaryFrequency}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white h-12"
-            >
-              {isLoading ? (
-                'Salvando...'
-              ) : (
-                <>
-                  Continuar para Pagamento
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
+            <div className="space-y-3">
+              <Button 
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white h-12"
+              >
+                {isLoading ? (
+                  'Salvando...'
+                ) : (
+                  <>
+                    {(businessType || contentInterest || summaryFrequency) ? 'Salvar e Continuar' : 'Pular Perguntas'}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </>
+                )}
+              </Button>
+              
+              {(businessType || contentInterest || summaryFrequency) && (
+                <Button 
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push('/onboarding/payment')}
+                  className="w-full h-10"
+                >
+                  Pular e Continuar
+                </Button>
               )}
-            </Button>
+            </div>
           </form>
 
           <div className="flex justify-between">
