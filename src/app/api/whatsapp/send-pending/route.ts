@@ -150,7 +150,7 @@ async function simulateWhatsAppSend(phoneNumber: string, message: string) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   return NextResponse.json({ 
     message: 'WhatsApp send-pending endpoint',
     method: 'Use POST to send pending notifications'

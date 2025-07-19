@@ -1,198 +1,228 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { headers } from 'next/headers'
-import { stripe, SUBSCRIPTION_PLANS, EXTRA_SUMMARY_PACKS } from '@/lib/stripe'
-import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import Stripe from 'stripe'
+import { NextRequest, NextResponse } from "next/server";
+import { headers } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { getStripe } from "@/lib/stripe";
+import Stripe from "stripe";
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.text()
-    const headersList = await headers()
-    const signature = headersList.get('stripe-signature')!
+    const body = await request.text();
+    const headersList = await headers();
+    const signature = headersList.get("stripe-signature")!;
 
-    let event: Stripe.Event
+    let event: Stripe.Event;
 
     try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
+      event = Stripe.webhooks.constructEvent(body, signature, webhookSecret);
     } catch (err) {
-      console.error('Webhook signature verification failed:', err)
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 400 }
-      )
+      console.error("Webhook signature verification failed:", err);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
-    const supabase = await createClient()
-    const adminSupabase = createAdminClient()
+    const supabase = await createClient();
+    const adminSupabase = createAdminClient();
 
     switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session
-        const userId = session.metadata?.user_id
-        const sessionType = session.metadata?.type || 'subscription'
+      case "checkout.session.completed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const userId = session.metadata?.user_id;
+        const sessionType = session.metadata?.type || "subscription";
 
         if (!userId) {
-          console.error('No user_id in session metadata')
-          break
+          console.error("No user_id in session metadata");
+          break;
         }
 
-        if (sessionType === 'extra_pack') {
+        if (sessionType === "extra_pack") {
           // Handle extra summary pack purchase
-          const packKey = session.metadata?.pack
-          const extraSummaries = parseInt(session.metadata?.extra_summaries || '0')
+          const packKey = session.metadata?.pack;
+          const extraSummaries = parseInt(
+            session.metadata?.extra_summaries || "0"
+          );
 
           if (packKey && extraSummaries > 0) {
-            console.log(`Processing extra pack purchase: ${packKey} (${extraSummaries} summaries) for user ${userId}`)
+            console.log(
+              `Processing extra pack purchase: ${packKey} (${extraSummaries} summaries) for user ${userId}`
+            );
 
             // Add extra summaries to user account
+            const { data: currentUser } = await adminSupabase
+              .from("users")
+              .select("extra_summaries")
+              .eq("id", userId)
+              .single();
+
+            const currentExtraSummaries = currentUser?.extra_summaries || 0;
+            const newTotal = currentExtraSummaries + extraSummaries;
+
             const { error } = await adminSupabase
-              .from('users')
+              .from("users")
               .update({
-                extra_summaries: adminSupabase.rpc('COALESCE', ['extra_summaries', 0]) + extraSummaries
+                extra_summaries: newTotal,
               })
-              .eq('id', userId)
+              .eq("id", userId);
 
             if (error) {
-              console.error('Error adding extra summaries:', error)
+              console.error("Error adding extra summaries:", error);
             } else {
-              console.log(`✅ Added ${extraSummaries} extra summaries to user ${userId}`)
+              console.log(
+                `✅ Added ${extraSummaries} extra summaries to user ${userId}`
+              );
             }
           }
         } else {
           // Handle subscription
+          const stripe = getStripe();
           const subscription = await stripe.subscriptions.retrieve(
             session.subscription as string
-          )
+          );
 
-          const planKey = session.metadata?.plan || 'starter'
-          const summaryLimit = parseInt(session.metadata?.summary_limit || '50')
+          const planKey = session.metadata?.plan || "starter";
+          const summaryLimit = parseInt(
+            session.metadata?.summary_limit || "50"
+          );
 
           // Update subscription in database
-          const { error } = await supabase
-            .from('subscriptions')
-            .upsert({
-              user_id: userId,
-              stripe_subscription_id: subscription.id,
-              stripe_customer_id: subscription.customer as string,
-              status: subscription.status,
-              plan_name: planKey,
-              amount_cents: subscription.items.data[0].price.unit_amount || 2990,
-              current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
-              trial_end: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
-            })
+          const { error } = await supabase.from("subscriptions").upsert({
+            user_id: userId,
+            stripe_subscription_id: subscription.id,
+            stripe_customer_id: subscription.customer as string,
+            status: subscription.status,
+            plan_name: planKey,
+            amount_cents: subscription.items.data[0].price.unit_amount || 2990,
+            current_period_start: new Date(
+              subscription.current_period_start * 1000
+            ).toISOString(),
+            current_period_end: new Date(
+              subscription.current_period_end * 1000
+            ).toISOString(),
+            trial_end: subscription.trial_end
+              ? new Date(subscription.trial_end * 1000).toISOString()
+              : null,
+          });
 
           if (error) {
-            console.error('Error updating subscription:', error)
+            console.error("Error updating subscription:", error);
           } else {
             // Calculate next reset date (first day of next month)
-            const now = new Date()
-            const nextReset = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-            
+            const now = new Date();
+            const nextReset = new Date(
+              now.getFullYear(),
+              now.getMonth() + 1,
+              1
+            );
+
             // Update user with new plan details
             await adminSupabase
-              .from('users')
-              .update({ 
+              .from("users")
+              .update({
                 subscription_status: subscription.status,
                 monthly_summary_limit: summaryLimit,
                 monthly_summary_used: 0, // Reset usage for new subscription
                 summary_reset_date: nextReset.toISOString(),
-                trial_end_date: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+                trial_end_date: subscription.trial_end
+                  ? new Date(subscription.trial_end * 1000).toISOString()
+                  : null,
               })
-              .eq('id', userId)
+              .eq("id", userId);
 
-            console.log(`✅ Updated user ${userId} with plan ${planKey} (${summaryLimit} summaries/month)`)
+            console.log(
+              `✅ Updated user ${userId} with plan ${planKey} (${summaryLimit} summaries/month)`
+            );
           }
         }
-        break
+        break;
       }
 
-      case 'customer.subscription.updated': {
-        const subscription = event.data.object as Stripe.Subscription
-        const customerId = subscription.customer as string
+      case "customer.subscription.updated": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
 
         // Find user by customer ID
         const { data: existingSubscription } = await supabase
-          .from('subscriptions')
-          .select('user_id')
-          .eq('stripe_customer_id', customerId)
-          .single()
+          .from("subscriptions")
+          .select("user_id")
+          .eq("stripe_customer_id", customerId)
+          .single();
 
         if (existingSubscription) {
           // Update subscription
           await supabase
-            .from('subscriptions')
+            .from("subscriptions")
             .update({
               status: subscription.status,
-              current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
+              current_period_end: new Date(
+                subscription.current_period_end * 1000
+              ).toISOString(),
             })
-            .eq('stripe_customer_id', customerId)
+            .eq("stripe_customer_id", customerId);
 
           // Update user status
           await supabase
-            .from('users')
-            .update({ 
-              subscription_status: subscription.status === 'active' ? 'active' : 'inactive' 
+            .from("users")
+            .update({
+              subscription_status:
+                subscription.status === "active" ? "active" : "inactive",
             })
-            .eq('id', existingSubscription.user_id)
+            .eq("id", existingSubscription.user_id);
         }
-        break
+        break;
       }
 
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription
-        const customerId = subscription.customer as string
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object as Stripe.Subscription;
+        const customerId = subscription.customer as string;
 
         // Find user by customer ID
         const { data: existingSubscription } = await supabase
-          .from('subscriptions')
-          .select('user_id')
-          .eq('stripe_customer_id', customerId)
-          .single()
+          .from("subscriptions")
+          .select("user_id")
+          .eq("stripe_customer_id", customerId)
+          .single();
 
         if (existingSubscription) {
           // Update subscription status
           await supabase
-            .from('subscriptions')
-            .update({ status: 'canceled' })
-            .eq('stripe_customer_id', customerId)
+            .from("subscriptions")
+            .update({ status: "canceled" })
+            .eq("stripe_customer_id", customerId);
 
           // Update user status
           await supabase
-            .from('users')
-            .update({ subscription_status: 'inactive' })
-            .eq('id', existingSubscription.user_id)
+            .from("users")
+            .update({ subscription_status: "inactive" })
+            .eq("id", existingSubscription.user_id);
         }
-        break
+        break;
       }
 
-      case 'invoice.payment_succeeded': {
-        const invoice = event.data.object as Stripe.Invoice
-        console.log('Payment succeeded for invoice:', invoice.id)
+      case "invoice.payment_succeeded": {
+        const invoice = event.data.object as Stripe.Invoice;
+        console.log("Payment succeeded for invoice:", invoice.id);
         // You could log this payment or send a confirmation email
-        break
+        break;
       }
 
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice
-        console.log('Payment failed for invoice:', invoice.id)
+      case "invoice.payment_failed": {
+        const invoice = event.data.object as Stripe.Invoice;
+        console.log("Payment failed for invoice:", invoice.id);
         // You could send a payment failure notification
-        break
+        break;
       }
 
       default:
-        console.log(`Unhandled event type: ${event.type}`)
+        console.log(`Unhandled event type: ${event.type}`);
     }
 
-    return NextResponse.json({ received: true })
+    return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Webhook error:', error)
+    console.error("Webhook error:", error);
     return NextResponse.json(
-      { error: 'Webhook handler failed' },
+      { error: "Webhook handler failed" },
       { status: 500 }
-    )
+    );
   }
 }

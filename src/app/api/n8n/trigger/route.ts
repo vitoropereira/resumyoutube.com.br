@@ -163,7 +163,7 @@ async function triggerChannelMonitoring(baseUrl: string) {
   }
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   return NextResponse.json({
     message: 'N8N Workflow Trigger API',
     usage: {
