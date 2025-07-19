@@ -160,36 +160,6 @@ export function YouTubeApiTest() {
     }
   }
 
-  const debugChannels = async () => {
-    setIsLoading(true)
-    addResult({ type: 'info', message: 'Debugando canais...' })
-
-    try {
-      const response = await fetch('/api/debug/channels')
-      const data = await response.json()
-
-      if (response.ok) {
-        addResult({ 
-          type: 'success', 
-          message: `Canais encontrados: ${data.adminChannels.data?.length || 0}`,
-          data
-        })
-      } else {
-        addResult({ 
-          type: 'error', 
-          message: `Erro: ${data.error}`,
-          data
-        })
-      }
-    } catch (error) {
-      addResult({ 
-        type: 'error', 
-        message: `Erro de conexão: ${error instanceof Error ? error.message : 'Desconhecido'}`
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   return (
     <Card>
@@ -243,16 +213,6 @@ export function YouTubeApiTest() {
           >
             {isLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
             Estatísticas
-          </Button>
-          
-          <Button 
-            onClick={debugChannels} 
-            disabled={isLoading}
-            variant="outline"
-            size="sm"
-          >
-            {isLoading ? <RefreshCw className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-            Debug Canais
           </Button>
           
           <Button 

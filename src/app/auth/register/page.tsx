@@ -85,9 +85,10 @@ export default function RegisterPage() {
       
       if (result.user?.email_confirmed_at) {
         toast.success("Conta criada com sucesso!");
-        router.push("/dashboard");
+        router.push("/onboarding/welcome");
       } else {
         toast.success("Conta criada! Verifique seu email para confirmar.");
+        router.push("/onboarding/welcome");
       }
       
     } catch (error) {
@@ -103,7 +104,7 @@ export default function RegisterPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: `${window.location.origin}/onboarding/welcome`,
         },
       });
 

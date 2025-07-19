@@ -30,6 +30,7 @@ export interface YouTubeVideo {
   viewCount: string
   likeCount: string
   commentCount: string
+  transcript?: string
 }
 
 export function extractChannelIdFromUrl(url: string): string | null {
@@ -221,7 +222,8 @@ export async function getChannelVideos(
 
 export async function getLatestVideosFromChannels(
   channelIds: string[], 
-  publishedAfter?: string
+  publishedAfter?: string,
+  includeTranscripts: boolean = false
 ): Promise<YouTubeVideo[]> {
   const apiKey = process.env.YOUTUBE_API_KEY
   
@@ -235,6 +237,15 @@ export async function getLatestVideosFromChannels(
     // Process channels in batches to avoid rate limits
     for (const channelId of channelIds) {
       const videos = await getChannelVideos(channelId, 5, publishedAfter)
+      
+      // Fetch transcripts if requested
+      if (includeTranscripts) {
+        for (const video of videos) {
+          const transcript = await getVideoTranscript(video.id)
+          video.transcript = transcript || undefined
+        }
+      }
+      
       allVideos.push(...videos)
     }
 
@@ -269,4 +280,53 @@ export function formatDuration(seconds: number): string {
     return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`
   }
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+}
+
+export async function getVideoTranscript(videoId: string): Promise<string | null> {
+  try {
+    const rapidApiKey = process.env.RAPIDAPI_KEY;
+    
+    if (!rapidApiKey) {
+      console.error('RAPIDAPI_KEY not configured');
+      return null;
+    }
+
+    const url = `https://youtube-transcripts.p.rapidapi.com/youtube/transcript?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${videoId}&videoId=${videoId}&chunkSize=500&text=false`;
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'x-rapidapi-host': 'youtube-transcripts.p.rapidapi.com',
+        'x-rapidapi-key': rapidApiKey
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`RapidAPI error: ${response.status} ${response.statusText}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+      console.log(`No transcript content found for video ${videoId}`);
+      return null;
+    }
+    
+    // Extract text from transcript content and join
+    const fullTranscript = data.content
+      .map((entry: any) => entry.text)
+      .join(' ')
+      .trim()
+      .replace(/♪/g, '') // Remove music notes
+      .replace(/\[.*?\]/g, '') // Remove [sound effects]
+      .replace(/\s+/g, ' ') // Clean up multiple spaces
+      .trim();
+    
+    console.log(`✅ Transcript found for video ${videoId}: ${fullTranscript.length} characters`);
+    return fullTranscript || null;
+  } catch (error) {
+    console.error(`Error fetching transcript for video ${videoId}:`, error);
+    return null;
+  }
 }

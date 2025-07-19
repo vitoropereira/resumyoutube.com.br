@@ -24,30 +24,61 @@ export async function GET(request: NextRequest) {
     // Calculate offset for pagination
     const offset = (page - 1) * limit
 
-    // Build query
+    // Build query for global videos with user notifications
     let query = supabase
-      .from('processed_videos')
+      .from('user_video_notifications')
       .select(`
-        *,
-        youtube_channels!inner(
-          channel_name,
-          channel_id,
-          thumbnail_url
+        id,
+        sent_at,
+        is_sent,
+        created_at,
+        global_processed_videos!inner(
+          id,
+          video_id,
+          video_title,
+          video_url,
+          video_description,
+          transcript,
+          summary,
+          video_duration,
+          published_at,
+          processed_at,
+          global_youtube_channels!inner(
+            id,
+            youtube_channel_id,
+            channel_name,
+            channel_url,
+            subscriber_count
+          )
         )
       `)
       .eq('user_id', user.id)
 
     // Apply filters
     if (status) {
-      query = query.eq('status', status)
+      // Map status to is_sent boolean
+      if (status === 'sent') {
+        query = query.eq('is_sent', true)
+      } else if (status === 'pending') {
+        query = query.eq('is_sent', false)
+      }
     }
 
     if (channelId) {
-      query = query.eq('channel_id', channelId)
+      query = query.eq('global_processed_videos.global_channel_id', channelId)
     }
 
-    // Apply sorting
-    query = query.order(sort, { ascending: order === 'asc' })
+    // Apply sorting - map to global video fields
+    let sortField = sort
+    if (sort === 'published_at') {
+      sortField = 'global_processed_videos.published_at'
+    } else if (sort === 'title') {
+      sortField = 'global_processed_videos.video_title'
+    } else if (sort === 'created_at') {
+      sortField = 'created_at'
+    }
+    
+    query = query.order(sortField, { ascending: order === 'asc' })
 
     // Apply pagination
     query = query.range(offset, offset + limit - 1)
@@ -60,16 +91,20 @@ export async function GET(request: NextRequest) {
 
     // Get total count for pagination
     let countQuery = supabase
-      .from('processed_videos')
+      .from('user_video_notifications')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
 
     if (status) {
-      countQuery = countQuery.eq('status', status)
+      if (status === 'sent') {
+        countQuery = countQuery.eq('is_sent', true)
+      } else if (status === 'pending') {
+        countQuery = countQuery.eq('is_sent', false)
+      }
     }
 
     if (channelId) {
-      countQuery = countQuery.eq('channel_id', channelId)
+      countQuery = countQuery.eq('global_processed_videos.global_channel_id', channelId)
     }
 
     const { count, error: countError } = await countQuery
@@ -84,7 +119,7 @@ export async function GET(request: NextRequest) {
     const hasPreviousPage = page > 1
 
     return NextResponse.json({
-      videos: videos || [],
+      notifications: videos || [],
       pagination: {
         page,
         limit,
@@ -119,26 +154,26 @@ export async function DELETE(request: NextRequest) {
     const videoId = searchParams.get('videoId')
 
     if (!videoId) {
-      return NextResponse.json({ error: 'Video ID is required' }, { status: 400 })
+      return NextResponse.json({ error: 'Notification ID is required' }, { status: 400 })
     }
 
-    // Delete the video record
+    // Delete the notification record (not the global video)
     const { error: deleteError } = await supabase
-      .from('processed_videos')
+      .from('user_video_notifications')
       .delete()
       .eq('id', videoId)
       .eq('user_id', user.id)
 
     if (deleteError) {
-      return NextResponse.json({ error: 'Failed to delete video' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to delete notification' }, { status: 500 })
     }
 
-    return NextResponse.json({ message: 'Video deleted successfully' })
+    return NextResponse.json({ message: 'Notification deleted successfully' })
 
   } catch (error) {
-    console.error('Error deleting video:', error)
+    console.error('Error deleting notification:', error)
     return NextResponse.json(
-      { error: 'Failed to delete video' },
+      { error: 'Failed to delete notification' },
       { status: 500 }
     )
   }

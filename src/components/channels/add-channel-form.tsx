@@ -97,43 +97,50 @@ export function AddChannelForm({ children }: AddChannelFormProps) {
         return
       }
 
-      // Check if channel already exists
-      const { data: existingChannel } = await supabase
-        .from('youtube_channels')
+      // Check if user is already subscribed to this global channel
+      const { data: globalChannel } = await supabase
+        .from('global_youtube_channels')
         .select('id')
-        .eq('channel_id', channelPreview.id)
-        .eq('user_id', user.id)
+        .eq('youtube_channel_id', channelPreview.id)
         .single()
 
-      if (existingChannel) {
-        toast.error('Este canal já foi adicionado')
-        return
+      if (globalChannel) {
+        const { data: existingSubscription } = await supabase
+          .from('user_channel_subscriptions')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('global_channel_id', globalChannel.id)
+          .eq('is_active', true)
+          .single()
+
+        if (existingSubscription) {
+          toast.error('Você já está inscrito neste canal')
+          return
+        }
       }
 
       // Check if user can add more channels
       const { data: canAdd } = await supabase
-        .rpc('can_add_channel', { user_uuid: user.id })
+        .rpc('can_add_global_channel', { user_uuid: user.id })
 
       if (!canAdd) {
         toast.error('Você atingiu o limite de canais. Remova um canal ou atualize sua assinatura.')
         return
       }
 
-      // Add channel
-      const { error } = await supabase
-        .from('youtube_channels')
-        .insert({
-          user_id: user.id,
-          channel_id: channelPreview.id,
-          channel_name: channelPreview.title,
-          channel_url: values.channelUrl,
-          subscriber_count: parseInt(channelPreview.statistics.subscriberCount),
-          is_active: true
-        })
+      // Add channel using API endpoint (handles global channel creation)
+      const response = await fetch('/api/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: values.channelUrl })
+      })
 
-      if (error) {
-        throw error
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Erro ao adicionar canal')
       }
+
+      const result = await response.json()
 
       toast.success('Canal adicionado com sucesso!')
       setOpen(false)

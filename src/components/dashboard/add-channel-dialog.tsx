@@ -88,7 +88,7 @@ export function AddChannelDialog({ children, disabled, maxChannels, currentCount
           <DialogTitle>Adicionar Canal do YouTube</DialogTitle>
           <DialogDescription>
             Adicione um canal do YouTube para começar a receber resumos automáticos.
-            Você está usando {currentCount} de {maxChannels} canais permitidos.
+            Você já tem {currentCount} canais monitorados.
           </DialogDescription>
         </DialogHeader>
         

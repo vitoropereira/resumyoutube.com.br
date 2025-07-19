@@ -28,17 +28,18 @@ export async function DELETE(
       )
     }
 
-    // Check if channel belongs to user
-    const { data: channel } = await supabase
-      .from('youtube_channels')
+    // Check if subscription belongs to user
+    const { data: subscription } = await supabase
+      .from('user_channel_subscriptions')
       .select('id, user_id')
       .eq('id', channelId)
       .eq('user_id', user.id)
+      .eq('is_active', true)
       .single()
 
-    if (!channel) {
+    if (!subscription) {
       return NextResponse.json(
-        { error: 'Canal não encontrado' },
+        { error: 'Inscrição não encontrada' },
         { status: 404 }
       )
     }
@@ -46,27 +47,27 @@ export async function DELETE(
     // Use admin client to bypass RLS policies for deletion
     const adminClient = createAdminClient()
     
-    // Delete channel (this will cascade delete summaries due to foreign key)
+    // Deactivate user subscription (don't delete global channel)
     const { error: deleteError } = await adminClient
-      .from('youtube_channels')
-      .delete()
+      .from('user_channel_subscriptions')
+      .update({ is_active: false })
       .eq('id', channelId)
       .eq('user_id', user.id)
 
     if (deleteError) {
-      console.error('Error deleting channel:', deleteError)
+      console.error('Error deactivating subscription:', deleteError)
       return NextResponse.json(
-        { error: 'Erro ao remover canal' },
+        { error: 'Erro ao cancelar inscrição' },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
-      message: 'Canal removido com sucesso'
+      message: 'Inscrição cancelada com sucesso'
     })
 
   } catch (error) {
-    console.error('Channel deletion error:', error)
+    console.error('Subscription deactivation error:', error)
     return NextResponse.json(
       { error: 'Erro interno do servidor' },
       { status: 500 }
